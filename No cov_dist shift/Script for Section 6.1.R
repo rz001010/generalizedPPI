@@ -1,15 +1,18 @@
-#manuscript for simulations under no covariate distribution shift
+# simulation code for Section 6.1 and Section B.2.4
+# constructing PPI estimators under no covariate distribution shift
 
 expit <- function(a){ return(exp(a)/(1+exp(a)))}
 
 ## mean
-mean.est.yn <- function(dat){
+# point estimation
+mean.est.yn <- function(dat){ 
   return(mean(dat$Y))
 }
-mean.est.fxn <- function(dat){
+mean.est.fxn <- function(dat){ 
   return(mean(dat$f))
 }
-mean.phi.yn <- function(dat){
+# influence function computation
+mean.phi.yn <- function(dat){ 
   return(dat$Y-mean(dat$Y))
 }
 
@@ -18,13 +21,14 @@ mean.phi.fxn <- function(dat){
 }
 
 ## tpr
+# point estimation
 tpr.est.yn <- function(dat){
   return(sum((dat$R>alpha)*dat$Y)/sum(dat$Y))
 }
 tpr.est.fxn <- function(dat){
   return(sum((dat$R>alpha)*dat$f)/sum(dat$f))
 }
-
+# influence function computation
 tpr.phi.yn <- function(dat){
   return(1*(dat$R>alpha)*dat$Y/mean(dat$Y) - mean((dat$R>alpha)*dat$Y)*dat$Y/(mean(dat$Y))^2)
 }
@@ -33,12 +37,14 @@ tpr.phi.fxn <- function(dat){
 }
 
 ## fpr
+# point estimation
 fpr.est.yn <- function(dat){
   return(sum((dat$R>alpha)*(1-dat$Y))/sum(1-dat$Y))
 }
 fpr.est.fxn <- function(dat){
   return(sum((dat$R>alpha)*(1-dat$f))/sum(1-dat$f))
 }
+# influence function computation
 fpr.phi.yn <- function(dat){
   return(1*(dat$R>alpha)*(1-dat$Y)/mean(1-dat$Y) - mean((dat$R>alpha)*(1-dat$Y))*(1-dat$Y)/(mean(1-dat$Y))^2)
 }
@@ -48,6 +54,7 @@ fpr.phi.fxn <- function(dat){
 
 
 ## AUC
+# point estimation
 auc.est.yn <- function(dat){
   
   score.order <- order(dat$score, decreasing=TRUE)
@@ -164,7 +171,7 @@ library(data.table)
 library(ROCR)
 library(MASS)
 
-nvec <- c(1000)
+nvec <- c(1000,10000)
 
 lambdavec <- c(0.8,0.5,0.25, 0.1, 0.01) # different \lambda values
 
@@ -230,154 +237,138 @@ train_dat$Y <- factor(train_dat$Y, levels=0:1)  # for classification
 
 library(randomForest)
 
-# a random forest model predicting Y from (R,X_1,...,X_5)
+# A random forest model predicting Y from (R,X_1,...,X_5)
 rf_all <- randomForest(Y ~ R + X1 + X2 + X3 + X4 + X5,
                        data = train_dat)
 
-# 2) “Noise” model (only X4,X5)
+# A random forest model predicting Y from (X_4,X_5), which are independent of Y
 rf_noise <- randomForest(Y ~ X4 + X5,
                          data = train_dat)
 
-# 3) “Bad” model (R plus the noise)
+# 3) A random forest model predicting Y from (R,X_1,X_4,X_4)
 rf_bad <- randomForest(Y ~ R + X1 + X4 + X5,
                        data = train_dat)
 
-#rf_noise <- randomForest(Y ~ X1 + X2,
-#                         data = train_dat)
-
-# data generation -------------------------------------------------------------------
+# data generation function
 dat_gen <- function(n,N,f_type){
   
+  # generate the data to construct the labeled data estimators and PPI estimators
+  # following the same data generation process described in Section 6.1
   inf_dat <- as.data.frame(mvrnorm((n+N), mu=c(0,0,0,0,3,20), Sigma=Var_mat))
   names(inf_dat) <- c("R","X1","X2","X3","X4","X5")
-  #inf_dat$X4 <- rnorm(n+N, mean=3, sd=1)
-  #inf_dat$X5 <- rnorm(n+N, mean=20, sd=2)
   
-  inf_dat$ideal <- compute_eta_p(inf_dat)
+  inf_dat$ideal <- compute_eta_p(inf_dat) # the prespecified ideal f: E[Y|R,X_1,...,X_5]
   
-  inf_dat$Y <- rbinom(n+N, size=1, prob=inf_dat$ideal)
+  inf_dat$Y <- rbinom(n+N, size=1, prob=inf_dat$ideal) # generating Y following the prespecified model
   
-  #inf_dat$Y <- factor(inf_dat$Y, levels=0:1)
-  #inf_dat$all <- predict(rf_all, newdata = inf_dat,type = "prob")[ ,"1"]
+  # obtain predictions using the "all" random forest model
+  inf_dat$all <- predict(rf_all, newdata = inf_dat,type = "prob")[ ,"1"] 
+  # obtain predictions using the "noise" random forest model
   inf_dat$noise <- predict(rf_noise, newdata = inf_dat,type = "prob")[ ,"1"]
-  #inf_dat$pure_noise <- runif(n+N,min=0.01, max=0.99)
-  #inf_dat$bad <- predict(rf_bad, newdata = inf_dat,type = "prob")[ ,"1"]
+  # obtain predictions using the "pure_noise" f
+  inf_dat$pure_noise <- runif(n+N, min=0.01, max=0.99)
+  # obtain predictions using the "bad" random forest model
+  inf_dat$bad <- predict(rf_bad, newdata = inf_dat,type = "prob")[ ,"1"]
   
+  # the f used for constructing PPI estimators
+  inf_dat$f <- inf_dat[,f_type] 
   
-  inf_dat$f <- inf_dat[,f_type]
-  inf_dat$score <- inf_dat$R
-  
-  return(inf_dat)
-}
-
-dat_gen_cor <- function(n,N,f_type){
-  
-  inf_dat <- as.data.frame(mvrnorm((n+N), mu=c(0,2,0), Sigma=Var_mat_cor))
-  names(inf_dat) <- c("R","X1","X2")
-  #names(inf_dat) <- c("R","X1","X2","X3","X4","X5")
-  #inf_dat$X4 <- rnorm(n+N, mean=3, sd=1)
-  #inf_dat$X5 <- rnorm(n+N, mean=20, sd=2)
-  
-  inf_dat$ideal <- compute_eta_p(inf_dat)
-  
-  inf_dat$Y <- rbinom(n+N, size=1, prob=inf_dat$ideal)
-  
-  #inf_dat$Y <- factor(inf_dat$Y, levels=0:1)
-  #inf_dat$all <- predict(rf_all, newdata = inf_dat,type = "prob")[ ,"1"]
-  inf_dat$noise <- predict(rf_noise, newdata = inf_dat,type = "prob")[ ,"1"]
-  inf_dat$pure_noise <- runif(n+N,min=0.01, max=0.99)
-  #inf_dat$bad <- predict(rf_bad, newdata = inf_dat,type = "prob")[ ,"1"]
-  
-  
-  inf_dat$f <- inf_dat[,f_type]
-  inf_dat$score <- inf_dat$R
+  inf_dat$score <- inf_dat$R # this is for facilitating the AUC computation
   
   return(inf_dat)
 }
 
 
+# simulation function
 ppi.sim <- function(nrep,dat_gen,n,lambda){
-  N <- n/lambda
-  ## 10000 replication to compute the target TPR, FPR, AUC
+  
+  N <- n/lambda # compute N, the unlabeled dataset size
+  
+  ## 10000 replications using fully labeled data to compute the target TPR, FPR, AUC
   target_rep <- 10000
   mean_target_0_vec <- tpr_target_0_vec <- fpr_target_0_vec <- auc_target_0_vec <- vector("numeric",length = target_rep)
   for(index in 1:target_rep){
     
     set.seed(index+4564356)
     
-    inf_dat.index <- as.data.frame(mvrnorm((n+N), mu=c(0,0,0,0,3,20), Sigma=Var_mat))
+    inf_dat.index <- as.data.frame(mvrnorm((n+N), mu=c(0,0,0,0,3,20), Sigma=Var_mat)) # generating (R,X_1,...,X_5)
     names(inf_dat.index) <- c("R","X1","X2","X3","X4","X5")
     
     
     inf_dat.index$ideal <- compute_eta_p(inf_dat.index)
-    inf_dat.index$Y <- rbinom((n+N), size=1, prob=inf_dat.index$ideal)
-    inf_dat.index$score <- inf_dat.index$R
-    #inf_dat.index$Y <- factor(inf_dat.index $Y, levels=0:1)
+    inf_dat.index$Y <- rbinom((n+N), size=1, prob=inf_dat.index$ideal) # generating Y
+    inf_dat.index$score <- inf_dat.index$R # facilitating the computation of AUC
     
     mean_target_0_vec[index] <- mean.est.yn(inf_dat.index)
     tpr_target_0_vec[index] <- tpr.est.yn(inf_dat.index)
     fpr_target_0_vec[index] <- fpr.est.yn(inf_dat.index)
     auc_target_0_vec[index] <- auc.est.yn(inf_dat.index)
   }
+  # compute the median of the 10000 replications as the targets
   mean_target_0 <- median(mean_target_0_vec)
   tpr_target_0 <- median(tpr_target_0_vec)
   fpr_target_0 <- median(fpr_target_0_vec)
   auc_target_0 <- median(auc_target_0_vec)
   
   
-  for(k in 3:3){
-    cat("k=",k)
+  for(k in 1:length(f_types)){
+    
+    # for saving the labeled data estimators
     mean_est_n_vec <- tpr_est_n_vec <- fpr_est_n_vec <- auc_est_n_vec <- vector("numeric",length = nrep)
+    # for saving the PPI estimators
     mean_est_ppi_vec <- tpr_est_ppi_vec <- fpr_est_ppi_vec <- auc_est_ppi_vec <- vector("numeric",length = nrep)
+    # for saving the \omega
     mean_omega_vec <- tpr_omega_vec <- fpr_omega_vec <- auc_omega_vec  <- vector("numeric",length = nrep)
+    # for saving the sd estimates for the labeled data estimators
     mean_sd_n_vec <- tpr_sd_n_vec <- fpr_sd_n_vec <- auc_sd_n_vec <- vector("numeric",length=nrep)
+    # for saving the sd estimates for the PPI estimators
     mean_sd_ppi_vec <- tpr_sd_ppi_vec <- fpr_sd_ppi_vec <- auc_sd_ppi_vec <-  vector("numeric",length=nrep)
+    # for saving the coverage for the labeled data estimators
     mean_cov_n_vec <- tpr_cov_n_vec <- fpr_cov_n_vec <- auc_cov_n_vec <- vector("numeric",length=nrep)
+    # for saving the coverage for the PPI estimators
     mean_cov_ppi_vec <- tpr_cov_ppi_vec <- fpr_cov_ppi_vec <- auc_cov_ppi_vec <-  vector("numeric",length=nrep)
     
     current_path <- paste(results_dir,'f_',f_types[k],'_n_',n,'_lambda_',lambda,'/',sep='')
     dir.create(file.path(current_path),showWarnings = FALSE)
+    
     # simulations -------------------------------------------------------------
     
     for( i in 1:nrep){
       
-      print(i)
       set.seed(i)
       dat.i <- dat_gen(n,N,f_types[k])
       
-      
-      # gold-standard
+      # Y is observed in n observations
       dat_n.i <- dat.i[1:n,]
+      
       mean_phi_n.i <- mean.phi.yn(dat_n.i)
       tpr_phi_n.i <- tpr.phi.yn(dat_n.i)
       fpr_phi_n.i <- fpr.phi.yn(dat_n.i)
       auc_phi_n.i <- auc.phi.yn(dat_n.i)
-      
-      #mean_phi_f_n.i <- mean.phi.fxn(dat_n.i,dat.i)
-      #tpr_phi_f_n.i <- tpr.phi.fxn(dat_n.i,dat.i)
-      #fpr_phi_f_n.i <- fpr.phi.fxn(dat_n.i,dat.i)
       
       mean_phi_f_n.i <- mean.phi.fxn(dat_n.i)
       tpr_phi_f_n.i <- tpr.phi.fxn(dat_n.i)
       fpr_phi_f_n.i <- fpr.phi.fxn(dat_n.i)
       auc_phi_f_n.i <- auc.phi.fxn(dat_n.i)
       
-      
       mean_est_n.i <- mean.est.yn(dat_n.i)
       tpr_est_n.i <- tpr.est.yn(dat_n.i)
       fpr_est_n.i <- fpr.est.yn(dat_n.i)
       auc_est_n.i <- auc.est.yn(dat_n.i)
       
+      # record the labeled data estimators
       mean_est_n_vec[i] <- mean_est_n.i
       tpr_est_n_vec[i] <- tpr_est_n.i
       fpr_est_n_vec[i] <- fpr_est_n.i
       auc_est_n_vec[i] <- auc_est_n.i
       
+      # record the sd estimates of the labeled data estimator
       mean_sd_n_vec[i] <- sqrt(var(mean_phi_n.i))/sqrt(n)
       tpr_sd_n_vec[i] <- sqrt(var(tpr_phi_n.i))/sqrt(n)
       fpr_sd_n_vec[i] <- sqrt(var(fpr_phi_n.i))/sqrt(n)
       auc_sd_n_vec[i] <- sqrt(var(auc_phi_n.i))/sqrt(n)
       
+      # record the coverage of the labeled data estimator
       if(mean_est_n.i+1.96*mean_sd_n_vec[i] >= mean_target_0 & mean_est_n.i-1.96*mean_sd_n_vec[i] <= mean_target_0){
         mean_cov_n_vec[i] <- 1
       }else{
@@ -398,18 +389,13 @@ ppi.sim <- function(nrep,dat_gen,n,lambda){
       }else{
         auc_cov_n_vec[i] <- 0
       }
-      # ppi
-      #dat_N.i <- dat.i[(n+1):(n+N),]
-      
-      #mean_phi_f_all.i <- mean.phi.fxn(dat.i,dat.i)
-      #tpr_phi_f_all.i <- tpr.phi.fxn(dat.i,dat.i)
-      #fpr_phi_f_all.i <- fpr.phi.fxn(dat.i,dat.i)
       
       mean_phi_f_all.i <- mean.phi.fxn(dat.i)
       tpr_phi_f_all.i <- tpr.phi.fxn(dat.i)
       fpr_phi_f_all.i <- fpr.phi.fxn(dat.i)
       auc_phi_f_all.i <- auc.phi.fxn(dat.i)
       
+      # compute \omega
       mean_omega_vec[i] <- cov(mean_phi_n.i,mean_phi_f_n.i)/(var(mean_phi_f_all.i))
       tpr_omega_vec[i] <- cov(tpr_phi_n.i,tpr_phi_f_n.i)/(var(tpr_phi_f_all.i))
       fpr_omega_vec[i] <- cov(fpr_phi_n.i,fpr_phi_f_n.i)/(var(fpr_phi_f_all.i))
@@ -424,11 +410,13 @@ ppi.sim <- function(nrep,dat_gen,n,lambda){
       auc_est_f_all.i <- auc.est.fxn(dat.i)
       auc_est_f_n.i <- auc.est.fxn(dat_n.i)
       
+      # construct the PPI estimator
       mean_est_ppi_vec[i] <- mean_est_n.i + mean_omega_vec[i]*(mean_est_f_all.i - mean_est_f_n.i)
       tpr_est_ppi_vec[i] <- tpr_est_n.i + tpr_omega_vec[i]*(tpr_est_f_all.i - tpr_est_f_n.i)
       fpr_est_ppi_vec[i] <- fpr_est_n.i + fpr_omega_vec[i]*(fpr_est_f_all.i - fpr_est_f_n.i)
       auc_est_ppi_vec[i] <- auc_est_n.i + auc_omega_vec[i]*(auc_est_f_all.i - auc_est_f_n.i)
       
+      # record the sd estimates of the PPI estimators
       mean_sd_ppi_vec[i] <- sqrt((var(mean_phi_n.i)-cov(mean_phi_f_n.i,mean_phi_n.i)^2/(var(mean_phi_f_all.i)+lambda*var(mean_phi_f_all.i)))/n)
       tpr_sd_ppi_vec[i] <- sqrt((var(tpr_phi_n.i)-cov(tpr_phi_f_n.i,tpr_phi_n.i)^2/(var(tpr_phi_f_all.i)+lambda*var(tpr_phi_f_all.i)))/n)
       fpr_sd_ppi_vec[i] <- sqrt((var(fpr_phi_n.i)-cov(fpr_phi_f_n.i,fpr_phi_n.i)^2/(var(fpr_phi_f_all.i)+lambda*var(fpr_phi_f_all.i)))/n)
@@ -439,6 +427,7 @@ ppi.sim <- function(nrep,dat_gen,n,lambda){
         stop()
       }
       
+      # record the coverage of the PPI estimators
       if(mean_est_ppi_vec[i]+1.96*mean_sd_ppi_vec[i] >= mean_target_0 & mean_est_ppi_vec[i]-1.96*mean_sd_ppi_vec[i] <= mean_target_0){
         mean_cov_ppi_vec[i] <- 1
       }else{
@@ -460,6 +449,7 @@ ppi.sim <- function(nrep,dat_gen,n,lambda){
         auc_cov_ppi_vec[i] <- 0
       }
       
+      # save the i_th simulation results
       res.i <- list(mean_est_n_i=mean_est_n_vec[i],
                     mean_est_ppi_i=mean_est_ppi_vec[i],
                     
@@ -481,102 +471,75 @@ ppi.sim <- function(nrep,dat_gen,n,lambda){
                     auc_est_n_i=auc_est_n_vec[i],
                     auc_est_ppi_i=auc_est_ppi_vec[i],
                     
-                    
                     auc_sd_n_i=auc_sd_n_vec[i],
                     auc_sd_ppi_i=auc_sd_ppi_vec[i]
       )
       save(res.i, file = paste(current_path,"res.",i,'.Rdata',sep=''))
     }
-    mean_pval <- t.test(mean_sd_n_vec,mean_sd_ppi_vec,paired=TRUE)$p.value
-    tpr_pval <- t.test(tpr_sd_n_vec,tpr_sd_ppi_vec,paired=TRUE)$p.value
-    fpr_pval <- t.test(fpr_sd_n_vec,fpr_sd_ppi_vec,paired=TRUE)$p.value
-    auc_pval <- t.test(auc_sd_n_vec,auc_sd_ppi_vec,paired=TRUE)$p.value
     
-    
+    # save the simulation results for one simulation scenario
     res <- list(mean_target_0=mean_target_0,
+                
                 mean_est_n=median(mean_est_n_vec),
                 mean_est_ppi=median(mean_est_ppi_vec),
                 
                 mean_sd_n=median(mean_sd_n_vec),
-                mean_empsd_n=sd(mean_est_n_vec),
                 mean_sd_ppi=median(mean_sd_ppi_vec),
-                mean_empsd_ppi=sd(mean_est_ppi_vec),
                 
                 mean_cov_n= mean(mean_cov_n_vec),
                 mean_cov_ppi= mean(mean_cov_ppi_vec),
                 
-                mean_pval=mean_pval,
                 
                 tpr_target_0=tpr_target_0,
+                
                 tpr_est_n=median(tpr_est_n_vec),
                 tpr_est_ppi=median(tpr_est_ppi_vec),
                 
                 tpr_sd_n=median(tpr_sd_n_vec),
-                tpr_empsd_n=sd(tpr_est_n_vec),
                 tpr_sd_ppi=median(tpr_sd_ppi_vec),
-                tpr_empsd_ppi=sd(tpr_est_ppi_vec),
                 
                 tpr_cov_n= mean(tpr_cov_n_vec),
                 tpr_cov_ppi= mean(tpr_cov_ppi_vec),
                 
-                tpr_pval=tpr_pval,
-                
                 
                 fpr_target_0=fpr_target_0,
+                
                 fpr_est_n=median(fpr_est_n_vec),
                 fpr_est_ppi=median(fpr_est_ppi_vec),
                 
                 fpr_sd_n=median(fpr_sd_n_vec),
-                fpr_empsd_n=sd(fpr_est_n_vec),
                 fpr_sd_ppi=median(fpr_sd_ppi_vec),
-                fpr_empsd_ppi=sd(fpr_est_ppi_vec),
                 
                 fpr_cov_n= mean(fpr_cov_n_vec),
                 fpr_cov_ppi= mean(fpr_cov_ppi_vec),
                 
-                fpr_pval=fpr_pval,
                 
                 auc_target_0=auc_target_0,
+                
                 auc_est_n=median(auc_est_n_vec),
                 auc_est_ppi=median(auc_est_ppi_vec),
                 
-                
-                
-                
-                
                 auc_sd_n=median(auc_sd_n_vec),
-                auc_empsd_n=sd(auc_est_n_vec),
                 auc_sd_ppi=median(auc_sd_ppi_vec),
-                auc_empsd_ppi=sd(auc_est_ppi_vec),
-                
-                
-                
-                
+              
                 auc_cov_n= mean(auc_cov_n_vec),
                 auc_cov_ppi= mean(auc_cov_ppi_vec),
                 
-                
-                auc_pval=auc_pval
-                
-    )
+                )
     save(res,file=paste(current_path,'res.summary.Rdata',sep=''))
   }
-  
-  
 }
 
-
-#ppi.sim(nrep=2500,dat_gen,n=nvec[3],lambda = lambdavec[2])
-
-#ppi.sim(nrep=2500,dat_gen,n=nvec[3],lambda = lambdavec[1])
-#ppi.sim(nrep=2500,dat_gen,n=nvec[3],lambda = lambdavec[3])
-
-#ppi.sim(nrep=2500,dat_gen,n=nvec[3],lambda = lambdavec[4])
-#ppi.sim(nrep=2500,dat_gen,n=nvec[3],lambda = lambdavec[5])
+# Simulations for Section 6.1, for \lambda \in {0.8,0.5,0.25, 0.1, 0.01}
+ppi.sim(nrep=2500,dat_gen,n=nvec[1],lambda = lambdavec[1])
+ppi.sim(nrep=2500,dat_gen,n=nvec[1],lambda = lambdavec[2])
+ppi.sim(nrep=2500,dat_gen,n=nvec[1],lambda = lambdavec[3])
+ppi.sim(nrep=2500,dat_gen,n=nvec[1],lambda = lambdavec[4])
+ppi.sim(nrep=2500,dat_gen,n=nvec[1],lambda = lambdavec[5])
 
 
-#ppi.sim(nrep=2500,dat_gen_cor,n=nvec[3],lambda = lambdavec[4])
 
-ppi.sim(nrep=10000,dat_gen,n=nvec[6],lambda = lambdavec[4])
+# Simulation for Section B.2.4, for n=10000, \lambda=0.1, over 10000 replications
+ppi.sim(nrep=10000,dat_gen,n=nvec[2],lambda = lambdavec[4])
 
 
