@@ -258,7 +258,7 @@ ppi.sim <- function(nrep,dat_gen,n,lambda){
   
   N <- n/lambda # compute N, the unlabeled dataset size
   
-  ## 10000 replications using fully labeled data to compute the target TPR, FPR, AUC
+  ## 10000 replications using fully labeled data to compute the targets
   target_rep <- 10000
   mean_target_0_vec <- tpr_target_0_vec <- fpr_target_0_vec <- auc_target_0_vec <- vector("numeric",length = target_rep)
   for(index in 1:target_rep){
@@ -292,9 +292,9 @@ ppi.sim <- function(nrep,dat_gen,n,lambda){
     mean_est_ppi_vec <- tpr_est_ppi_vec <- fpr_est_ppi_vec <- auc_est_ppi_vec <- vector("numeric",length = nrep)
     # for saving the \omega
     mean_omega_vec <- tpr_omega_vec <- fpr_omega_vec <- auc_omega_vec  <- vector("numeric",length = nrep)
-    # for saving the sd estimates for the labeled data estimators
+    # for saving the se estimates for the labeled data estimators
     mean_sd_n_vec <- tpr_sd_n_vec <- fpr_sd_n_vec <- auc_sd_n_vec <- vector("numeric",length=nrep)
-    # for saving the sd estimates for the PPI estimators
+    # for saving the se estimates for the PPI estimators
     mean_sd_ppi_vec <- tpr_sd_ppi_vec <- fpr_sd_ppi_vec <- auc_sd_ppi_vec <-  vector("numeric",length=nrep)
     # for saving the coverage for the labeled data estimators
     mean_cov_n_vec <- tpr_cov_n_vec <- fpr_cov_n_vec <- auc_cov_n_vec <- vector("numeric",length=nrep)
@@ -335,7 +335,7 @@ ppi.sim <- function(nrep,dat_gen,n,lambda){
       fpr_est_n_vec[i] <- fpr_est_n.i
       auc_est_n_vec[i] <- auc_est_n.i
       
-      # record the sd estimates of the labeled data estimator
+      # record the se estimates of the labeled data estimator
       mean_sd_n_vec[i] <- sqrt(var(mean_phi_n.i))/sqrt(n)
       tpr_sd_n_vec[i] <- sqrt(var(tpr_phi_n.i))/sqrt(n)
       fpr_sd_n_vec[i] <- sqrt(var(fpr_phi_n.i))/sqrt(n)
@@ -389,7 +389,7 @@ ppi.sim <- function(nrep,dat_gen,n,lambda){
       fpr_est_ppi_vec[i] <- fpr_est_n.i + fpr_omega_vec[i]*(fpr_est_f_all.i - fpr_est_f_n.i)
       auc_est_ppi_vec[i] <- auc_est_n.i + auc_omega_vec[i]*(auc_est_f_all.i - auc_est_f_n.i)
       
-      # record the sd estimates of the PPI estimators
+      # record the se estimates of the PPI estimators
       mean_sd_ppi_vec[i] <- sqrt((var(mean_phi_n.i)-cov(mean_phi_f_n.i,mean_phi_n.i)^2/(var(mean_phi_f_all.i)+lambda*var(mean_phi_f_all.i)))/n)
       tpr_sd_ppi_vec[i] <- sqrt((var(tpr_phi_n.i)-cov(tpr_phi_f_n.i,tpr_phi_n.i)^2/(var(tpr_phi_f_all.i)+lambda*var(tpr_phi_f_all.i)))/n)
       fpr_sd_ppi_vec[i] <- sqrt((var(fpr_phi_n.i)-cov(fpr_phi_f_n.i,fpr_phi_n.i)^2/(var(fpr_phi_f_all.i)+lambda*var(fpr_phi_f_all.i)))/n)
