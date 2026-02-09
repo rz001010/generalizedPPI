@@ -183,8 +183,7 @@ f_types <- c("all","bad","noise","ideal","pure_noise") # different prediction mo
 # "pure_noise" is Unif[0.01,0.99], uniformly distributed random noise
 
 alpha <- 0.6
-results_dir <- paste0("your result path") # path to save the simulation results
-
+results_dir <- paste0("your result path") 
 set.seed(2025)
 
 # The covariance matrix of (R,X_1,...,X_5)
@@ -543,3 +542,392 @@ ppi.sim(nrep=2500,dat_gen,n=nvec[1],lambda = lambdavec[5])
 ppi.sim(nrep=10000,dat_gen,n=nvec[2],lambda = lambdavec[4])
 
 
+# Code for generating Figure 1 
+library(tidyverse)
+library(ggplot2)
+
+models      <- c("all", "ideal", "noise", "bad","pure_noise") # prediction models f
+lambda_vals <- c(0.01,0.1, 0.25, 0.5,0.8) # all \lambda values to include
+metrics     <- c("mean", "tpr", "fpr", "auc")
+
+ratio_list <- list()
+
+for (lambda_val in lambda_vals) {
+  for (model in models) {
+    # The path that saved the simulation results
+    folder_path <- paste0("your result path", sprintf("f_%s_n_1000_lambda_%s", model, lambda_val))
+    
+    # find all simulation files
+    sim_files <- list.files(
+      path        = folder_path,
+      pattern     = "^res\\.[0-9]+\\.(RData|rda)$",
+      full.names  = TRUE,
+      ignore.case = TRUE
+    )
+    if (length(sim_files) == 0) {
+      stop("No simulation files found in: ", folder_path)
+    }
+    
+    # load simulation results
+    n_rep <- length(sim_files)
+    sims  <- vector("list", n_rep)
+    for (i in seq_len(n_rep)) {
+      tmp_env  <- new.env()
+      obj_name <- load(sim_files[i], envir = tmp_env)
+      sims[[i]] <- tmp_env[[obj_name]]
+    }
+    
+    # compute mean(sd_ppi/sd_n) for each metric
+    for (metric in metrics) {
+      est_n   <- sapply(sims, function(x) x[[paste0(metric, "_sd_n_i")]])
+      est_ppi <- sapply(sims, function(x) x[[paste0(metric, "_sd_ppi_i")]])
+      ratio_vec   <- est_ppi / est_n
+      mean_ratio  <- mean(ratio_vec, na.rm = TRUE)
+      
+      ratio_list[[length(ratio_list) + 1]] <-
+        data.frame(
+          model      = model,
+          lambda     = lambda_val,
+          metric     = metric,
+          mean_ratio = mean_ratio,
+          stringsAsFactors = FALSE
+        )
+    }
+  }
+}
+
+# bind into a data.frame 
+df_ratio <- bind_rows(ratio_list)
+df_ratio$metric <- recode(df_ratio$metric,
+                          mean = "Mean",
+                          tpr  = "TPR",
+                          fpr  = "FPR",
+                          auc  = "AUC")
+df_ratio$metric <- factor(df_ratio$metric, levels = c("Mean", "TPR", "FPR", "AUC"))
+df_ratio$lambda <- factor(df_ratio$lambda, levels = lambda_vals)
+df_ratio$model[df_ratio$model=="ideal"] <- "aaideal" 
+
+ratio_sec2 <- ggplot(df_ratio,
+                   aes(x     = lambda,
+                       y     = mean_ratio,
+                       color = model,
+                       shape = model,
+                       group = model)) +
+  geom_point(size = 3) +
+  geom_line() +
+  facet_wrap(~ metric, nrow = 1) +
+  labs(
+    x     = expression(lambda),
+    y     = expression(mean(hat(sigma)[PPI] / hat(sigma)[lab])),
+    color = "Prediction model",
+    shape = "Prediction model",
+    title = ""
+  ) +
+  scale_color_manual(
+    values = c("all"="salmon","bad"="chartreuse4","aaideal"="turquoise3","noise"="orchid","pure_noise"="orange2"),
+    labels = c(
+      "all"= expression(RF*"("*Y* plain("~")*bold(X)*")"),
+      "bad"= expression(RF*"("*Y* plain("~")*R+X[1]+X[4]+X[5]*")"),
+      "noise"= expression(RF*"("*Y* plain("~")*X[4]+X[5]*")"),
+      "aaideal"= expression(Pr(Y==1~"|"~ bold(X))),
+      "pure_noise"="Unif[0.01,0.99]"
+    )
+  )+
+  scale_shape_manual(
+    values = c("all"=16,"bad"=17,"aaideal"=15,"noise"=18,"pure_noise"=4),
+    labels = c(
+      "all"= expression(RF*"("*Y* plain("~")*bold(X)*")"),
+      "bad"= expression(RF*"("*Y* plain("~")*R+X[1]+X[4]+X[5]*")"),
+      "noise"= expression(RF*"("*Y* plain("~")*X[4]+X[5]*")"),
+      "aaideal"= expression(Pr(Y==1~"|"~ bold(X))),
+      "pure_noise"="Unif[0.01,0.99]"
+    )
+  )+
+  theme_minimal(base_size = 14) +
+  theme_bw()+
+  theme( 
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 14),
+    
+    
+    panel.spacing = unit(1, "lines"),
+    strip.text    = element_text(face = "bold"),
+    legend.position = "bottom"
+  )
+
+# save Figure 1:
+ggsave(
+  filename = paste0("your result path","ratio_if_5f_5lambda.png"),
+  plot = ratio_sec2,
+  width = 8,       
+  height = 4,     
+  units = "in",    
+  dpi = 300        
+)
+
+
+# Code for generating Figure 2 or Figure S.5 
+models     <- c("all", "ideal", "noise", "bad","pure_noise")
+lambda_val <- 0.1
+alpha_lvls <- seq(0.01, 0.99, by = 0.05) # nominal coverage levels
+metrics    <- c("mean", "tpr", "fpr", "auc")
+methods    <- c("n", "ppi")
+
+cov_results <- map_dfr(models, function(model) {
+  folder_name <- sprintf("f_%s_n_10000_lambda_%s", model, lambda_val)
+  folder_path <- paste0("your result path", sprintf("f_%s_n_10000_lambda_%s", model, lambda_val))
+  
+  if (!dir.exists(folder_path)) {
+    stop("Folder not found: ", folder_path)
+  }
+  
+  # load the targets
+  sum_env <- new.env()
+  load(file.path(folder_path, "res.summary.RData"), envir = sum_env)
+  targets <- sum_env$res
+  
+  # find all sim files 
+  sim_files <- list.files(
+    path        = folder_path,
+    pattern     = "^res\\.[0-9]+\\.(RData|rda)$",
+    full.names  = TRUE,
+    ignore.case = TRUE
+  )
+  if (length(sim_files) == 0) {
+    stop("No simulation files found in: ", folder_path)
+  }
+  cat("  Loading simulation files\n")
+  
+  # load each one into its own env
+  sims <- map(sim_files, function(f) {
+    e <- new.env()
+    load(f, envir = e)
+    # assume the first object loaded is your list
+    e[[ls(e)[1]]]
+  })
+  cat("  Loaded all simulations\n")
+  
+  cat("  Computing coverage...\n")
+  # compute coverage
+  expand.grid(alpha  = alpha_lvls,
+              metric = metrics,
+              method = methods,
+              stringsAsFactors = FALSE) %>%
+    as_tibble() %>%
+    mutate(
+      Z = qnorm(1 - alpha / 2),
+      coverage = pmap_dbl(
+        list(metric, method, Z),
+        function(metric, method, Z) {
+          true_val <- targets[[paste0(metric, "_target_0")]]
+          ests     <- map_dbl(sims, ~ .x[[paste0(metric, "_est_",  method, "_i")]])
+          sds      <- map_dbl(sims, ~ .x[[paste0(metric, "_sd_",   method, "_i")]])
+          mean((true_val >= ests - Z * sds) & (true_val <= ests + Z * sds),
+               na.rm = TRUE)
+        }
+      ),
+      model = model
+    ) %>%
+    select(model, alpha, method, metric, coverage)
+})
+
+df <- cov_results
+df_n_collapsed <- df %>%
+  filter(method == "n") %>%
+  group_by(alpha,metric) %>%
+  summarise(
+    coverage = first(coverage),
+    method = "n",
+    model = "zonlylabest",
+    .groups = "drop"
+  )
+df_others <- df %>%
+  filter(!(method == "n"))
+
+df_final <- bind_rows(df_others, df_n_collapsed)
+df_final$metric <- recode(df_final$metric,
+                          mean = "Mean",
+                          tpr  = "TPR",
+                          fpr  = "FPR",
+                          auc  = "AUC")
+df_final$metric <- factor(df_final$metric, levels = c("Mean", "TPR", "FPR", "AUC"))
+
+cov_plot <- ggplot(df_final,
+                  aes(x = 1-alpha, y = coverage,
+                      color    = model,
+                      linetype = model)) +
+  geom_point(aes(shape = model),
+             size=1.5) +
+  facet_wrap( ~ metric,nrow=1) +
+  coord_fixed() +
+  scale_color_manual(
+    values = c("all"="salmon","bad"="chartreuse4","ideal"="turquoise3","noise"="orchid","zonlylabest"="orange2","pure_noise"="navy"),
+    labels = c(
+      "all"= expression(RF*"("*Y* plain("~")*R+X[1]+...+X[5]*")"),
+      "bad"= expression(RF*"("*Y* plain("~")*R+X[1]+X[4]+X[5]*")"),
+      "noise"= expression(RF*"("*Y* plain("~")*X[4]+X[5]*")"),
+      "ideal"= expression(Pr(Y==1~"|"~ R,X[1],...,X[5])),
+      "pure_noise"="Unif[0.01,0.99]",
+      "zonlylabest" = "Only using labeled data"
+    )
+  )+
+  scale_linetype_manual(
+    values = c("all"="solid","bad"="dashed","ideal"="dotted","noise"="dotdash","zonlylabest"="longdash","pure_noise"="twodash"),
+    labels = c(
+      "all"= expression(RF*"("*Y* plain("~")*R+X[1]+...+X[5]*")"),
+      "bad"= expression(RF*"("*Y* plain("~")*R+X[1]+X[4]+X[5]*")"),
+      "noise"= expression(RF*"("*Y* plain("~")*X[4]+X[5]*")"),
+      "ideal"= expression(Pr(Y==1~"|"~ R,X[1],...,X[5])),
+      "pure_noise"="Unif[0.01,0.99]",
+      "zonlylabest" = "Only using labeled data"
+    )
+  )+
+  scale_shape_manual(
+    values = c("all"=16,"bad"=17,"ideal"=15,"noise"=18,"zonlylabest"=4,"pure_noise"=6),
+    labels = c(
+      "all"= expression(RF*"("*Y* plain("~")*R+X[1]+...+X[5]*")"),
+      "bad"= expression(RF*"("*Y* plain("~")*R+X[1]+X[4]+X[5]*")"),
+      "noise"= expression(RF*"("*Y* plain("~")*X[4]+X[5]*")"),
+      "ideal"= expression(Pr(Y==1~"|"~ R,X[1],...,X[5])),
+      "pure_noise"="Unif[0.01,0.99]",
+      "zonlylabest" = "Only using labeled data"
+    )
+  )+
+  labs(
+    color=NULL, linetype=NULL, shape= NULL,
+    x     = "Nominal coverage",
+    y     = "Empirical coverage",
+    title = ""
+  ) +
+  geom_abline(slope = 1, intercept = 0, linetype="dashed",color="red",linewidth=0.8)+
+  theme_bw()+
+  theme(panel.spacing = unit(2, "lines"),
+        axis.text = element_text(size = 10),
+        axis.title = element_text(size = 14),
+        strip.text = element_text(face = "bold"),
+        legend.position = "bottom")
+
+ggsave(
+  filename = paste0("your result path","cov_plot.png"),
+  plot = cov_big,
+  width = 8.5,       
+  height = 4,     
+  units = "in",    
+  dpi = 300       
+)
+
+# Code for generating Figure S.6
+models      <- c("all", "ideal", "noise", "bad", "pure_noise")
+lambda_vals <- c(0.01, 0.1, 0.25, 0.5, 0.8)
+metrics     <- c("mean", "tpr", "fpr", "auc")
+
+base_dir <- "your result path"
+
+diff_list <- list()
+
+for (lambda_val in lambda_vals) {
+  for (model in models) {
+    
+    folder_path <- file.path(base_dir, sprintf("f_%s_n_1000_lambda_%s", model, lambda_val))
+    
+    if (!dir.exists(folder_path)) {
+      stop("Folder not found: ", folder_path)
+    }
+    
+    # Load res.summary.RData into env
+    sum_env <- new.env()
+    load(file.path(folder_path, "res.summary.RData"), envir = sum_env)
+    res <- sum_env$res
+    
+    # Compute mean(est_ppi - target_0) for each metric
+    for (metric in metrics) {
+      est_name    <- paste0(metric, "_est_ppi")
+      target_name <- paste0(metric, "_target_0")
+      
+      if (!(est_name %in% names(res))) {
+        stop("Missing in res: ", est_name, " (folder: ", folder_path, ")")
+      }
+      if (!(target_name %in% names(res))) {
+        stop("Missing in res: ", target_name, " (folder: ", folder_path, ")")
+      }
+      
+      diff_vec  <- res[[est_name]] - res[[target_name]]
+      mean_diff <- mean(diff_vec, na.rm = TRUE)
+      
+      diff_list[[length(diff_list) + 1]] <-
+        data.frame(
+          model     = model,
+          lambda    = lambda_val,
+          metric    = metric,
+          mean_diff = mean_diff,
+          stringsAsFactors = FALSE
+        )
+    }
+  }
+}
+
+df_diff <- bind_rows(diff_list)
+df_diff$metric <- recode(df_diff$metric,
+                         mean = "Mean",
+                         tpr  = "TPR",
+                         fpr  = "FPR",
+                         auc  = "AUC")
+df_diff$metric <- factor(df_diff$metric, levels = c("Mean", "TPR", "FPR", "AUC"))
+df_diff$lambda <- factor(df_diff$lambda, levels = lambda_vals)
+
+df_diff$model[df_diff$model == "ideal"] <- "aaideal" # for ordering the legend
+
+diff_sec2 <- ggplot(df_diff,
+                    aes(x     = lambda,
+                        y     = mean_diff,
+                        color = model,
+                        shape = model,
+                        group = model)) +
+  geom_point(size = 3) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red")+
+  facet_wrap(~ metric, nrow = 1) +
+  labs(
+    x     = expression(lambda),
+    y     = expression(mean(hat(theta)[PPI] - theta[0])),
+    color = "Prediction model",
+    shape = "Prediction model",
+    title = ""
+  ) +
+  scale_color_manual(
+    values = c("all"="salmon","bad"="chartreuse4","aaideal"="turquoise3","noise"="orchid","pure_noise"="orange2"),
+    labels = c(
+      "all"= expression(RF*"("*Y* plain("~")*bold(X)*")"),
+      "bad"= expression(RF*"("*Y* plain("~")*R+X[1]+X[4]+X[5]*")"),
+      "noise"= expression(RF*"("*Y* plain("~")*X[4]+X[5]*")"),
+      "aaideal"= expression(Pr(Y==1~"|"~ bold(X))),
+      "pure_noise"="Unif[0.01,0.99]"
+    )
+  ) +
+  scale_shape_manual(
+    values = c("all"=16,"bad"=17,"aaideal"=15,"noise"=18,"pure_noise"=4),
+    labels = c(
+      "all"= expression(RF*"("*Y* plain("~")*bold(X)*")"),
+      "bad"= expression(RF*"("*Y* plain("~")*R+X[1]+X[4]+X[5]*")"),
+      "noise"= expression(RF*"("*Y* plain("~")*X[4]+X[5]*")"),
+      "aaideal"= expression(Pr(Y==1~"|"~ bold(X))),
+      "pure_noise"="Unif[0.01,0.99]"
+    )
+  ) +
+  theme_minimal(base_size = 14) +
+  theme_bw() +
+  theme(
+    axis.text        = element_text(size = 10),
+    axis.title       = element_text(size = 14),
+    panel.spacing    = unit(1, "lines"),
+    strip.text       = element_text(face = "bold"),
+    legend.position  = "bottom"
+  )
+
+ggsave(
+  filename = paste0("your result path","bias_sec2.png"),
+  plot     = diff_sec2,
+  width    = 8,
+  height   = 4,
+  units    = "in",
+  dpi      = 300
+)
