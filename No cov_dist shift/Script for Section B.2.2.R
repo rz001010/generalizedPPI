@@ -302,8 +302,7 @@ ppi.sim <- function(nrep,dat_gen,n,lambda){
     # simulations -------------------------------------------------------------
     
     for( i in 1:nrep){
-      
-      print(i)
+    
       set.seed(i)
       dat.i <- dat_gen(n,N,f_types[k])
       
@@ -456,7 +455,7 @@ ppi.sim <- function(nrep,dat_gen,n,lambda){
       auc_sd_ppi=median(auc_sd_ppi_vec),
       
       auc_cov_n= mean(auc_cov_n_vec),
-      auc_cov_ppi= mean(auc_cov_ppi_vec),
+      auc_cov_ppi= mean(auc_cov_ppi_vec)
     )
     save(res,file=paste(current_path,'res.summary.Rdata',sep=''))
   }
