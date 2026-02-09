@@ -3,16 +3,16 @@ library(data.table)
 library(ROCR)
 
 set.seed(2026)  
-
+your_path <- getwd()
 # read the wine-type datasets
 df1 <- read.csv(
-  "your path/wine+quality/winequality-red.csv",
+  paste0(your_path,"/wine+quality/winequality-red.csv"),
   sep = ";"
 )
 df1$outcome <- 1 # code red wine with 1
 
 df2 <- read.csv(
-  "your path/wine+quality/winequality-white.csv",
+  paste0(your_path,"/wine+quality/winequality-white.csv"),
   sep = ";"
 )
 df2$outcome <- 0 # code white wine with 0
@@ -336,7 +336,7 @@ auc_sd_all.i <- sqrt(var(auc_phi_all.i))/sqrt(size_all)
 res.i <- list(
   tpr_est_n_i=tpr_est_n.i,
   tpr_est_ppi_i=tpr_est_ppi.i,
-  tpr_est_all.i=tpr_est_all.i,
+  tpr_est_all_i=tpr_est_all.i,
   
   tpr_sd_n_i=tpr_sd_n.i,
   tpr_sd_ppi_i=tpr_sd_ppi.i,
@@ -359,4 +359,59 @@ res.i <- list(
   auc_sd_ppi_i=auc_sd_ppi.i,
   auc_sd_all_i=auc_sd_all.i
 )
+
+
+# Create the table
+tbl <- data.frame(
+  Metric = c("TPR", "FPR", "AUC"),
+  
+  `Point (i)`   = c(res.i$tpr_est_n_i,
+                    res.i$fpr_est_n_i,
+                    res.i$auc_est_n_i),
+  
+  `Point (ii)`  = c(res.i$tpr_est_ppi_i,
+                    res.i$fpr_est_ppi_i,
+                    res.i$auc_est_ppi_i),
+  
+  `Point (iii)` = c(res.i$tpr_est_all_i,
+                    res.i$fpr_est_all_i,
+                    res.i$auc_est_all_i),
+  
+  `SE (i)`   = c(res.i$tpr_sd_n_i,
+                 res.i$fpr_sd_n_i,
+                 res.i$auc_sd_n_i),
+  
+  `SE (ii)`  = c(res.i$tpr_sd_ppi_i,
+                 res.i$fpr_sd_ppi_i,
+                 res.i$auc_sd_ppi_i),
+  
+  `SE (iii)` = c(res.i$tpr_sd_all_i,
+                 res.i$fpr_sd_all_i,
+                 res.i$auc_sd_all_i)
+)
+
+
+tbl_fmt <- tbl
+
+point_cols <- grep("^Point", names(tbl_fmt), value = TRUE)
+se_cols    <- grep("^SE", names(tbl_fmt), value = TRUE)
+
+tbl_fmt[point_cols] <- lapply(tbl_fmt[point_cols], function(x)
+  sprintf("%.4f", x)
+)
+
+tbl_fmt[se_cols] <- lapply(tbl_fmt[se_cols], function(x)
+  sprintf("%.5f", x)
+)
+
+library(knitr)
+
+caption_text <- paste(
+  "Estimates of TPR, FPR, and AUC with estimated standard errors.",
+  "(i) Estimator that does not use predictions in the unlabeled data;",
+  "(ii) the PPI estimator;",
+  "(iii) the ideal estimator using labels for the unlabeled data."
+)
+
+kable(tbl_fmt, caption = caption_text)
 
