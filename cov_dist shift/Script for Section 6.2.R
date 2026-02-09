@@ -361,6 +361,7 @@ dat_gen_full <- function(size,f_type){
   # rescaled \pi(X) (\pi(X) \in [\epsilon, 1−\epsilon])
   inf_dat$labprobtrue <- 0.2 + (1 - 2*0.2) * p_raw
   inf_dat$labprob <- inf_dat$labprobtrue
+  inf_dat$labind <- rbinom(size,1,inf_dat$labprobtrue)
   
   return(inf_dat)
 }
