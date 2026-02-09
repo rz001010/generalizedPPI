@@ -193,7 +193,7 @@ Var_mat_cor <- matrix(c(
 ), nrow = 3, byrow = TRUE)
 
 # prespecified E[Y|R,X_1,X_2]
-beta_intcpt <- -0.5
+beta_intcpt <- 0
 beta_R  <-  1.0
 
 compute_eta_p <- function(df){
