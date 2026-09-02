@@ -809,7 +809,7 @@ cov_plot <- ggplot(df_final,
 
 ggsave(
   filename = paste0("your result path","cov_plot.png"),
-  plot = cov_big,
+  plot = cov_plot,
   width = 8.5,       
   height = 4,     
   units = "in",    
