@@ -183,7 +183,8 @@ f_types <- c("all","bad","noise","ideal","pure_noise") # different prediction mo
 # "pure_noise" is Unif[0.01,0.99], uniformly distributed random noise
 
 alpha <- 0.6
-results_dir <- paste0("your result path") 
+results_dir <- "results/noncovshift_ppi/"
+dir.create(results_dir, recursive = TRUE, showWarnings = FALSE)
 set.seed(2025)
 
 # The covariance matrix of (R,X_1,...,X_5)
@@ -303,11 +304,11 @@ ppi.sim <- function(nrep,dat_gen,n,lambda){
     fpr_target_0_vec[index] <- fpr.est.yn(inf_dat.index)
     auc_target_0_vec[index] <- auc.est.yn(inf_dat.index)
   }
-  # compute the median of the 10000 replications as the targets
-  mean_target_0 <- median(mean_target_0_vec)
-  tpr_target_0 <- median(tpr_target_0_vec)
-  fpr_target_0 <- median(fpr_target_0_vec)
-  auc_target_0 <- median(auc_target_0_vec)
+  # compute the mean of the 10000 replications as the targets
+  mean_target_0 <- mean(mean_target_0_vec)
+  tpr_target_0 <- mean(tpr_target_0_vec)
+  fpr_target_0 <- mean(fpr_target_0_vec)
+  auc_target_0 <- mean(auc_target_0_vec)
   
   
   for(k in 1:length(f_types)){
@@ -479,11 +480,11 @@ ppi.sim <- function(nrep,dat_gen,n,lambda){
     # save the simulation results for one simulation scenario
     res <- list(mean_target_0=mean_target_0,
                 
-                mean_est_n=median(mean_est_n_vec),
-                mean_est_ppi=median(mean_est_ppi_vec),
+                mean_est_n=mean(mean_est_n_vec),
+                mean_est_ppi=mean(mean_est_ppi_vec),
                 
-                mean_sd_n=median(mean_sd_n_vec),
-                mean_sd_ppi=median(mean_sd_ppi_vec),
+                mean_sd_n=mean(mean_sd_n_vec),
+                mean_sd_ppi=mean(mean_sd_ppi_vec),
                 
                 mean_cov_n= mean(mean_cov_n_vec),
                 mean_cov_ppi= mean(mean_cov_ppi_vec),
@@ -491,11 +492,11 @@ ppi.sim <- function(nrep,dat_gen,n,lambda){
                 
                 tpr_target_0=tpr_target_0,
                 
-                tpr_est_n=median(tpr_est_n_vec),
-                tpr_est_ppi=median(tpr_est_ppi_vec),
+                tpr_est_n=mean(tpr_est_n_vec),
+                tpr_est_ppi=mean(tpr_est_ppi_vec),
                 
-                tpr_sd_n=median(tpr_sd_n_vec),
-                tpr_sd_ppi=median(tpr_sd_ppi_vec),
+                tpr_sd_n=mean(tpr_sd_n_vec),
+                tpr_sd_ppi=mean(tpr_sd_ppi_vec),
                 
                 tpr_cov_n= mean(tpr_cov_n_vec),
                 tpr_cov_ppi= mean(tpr_cov_ppi_vec),
@@ -503,11 +504,11 @@ ppi.sim <- function(nrep,dat_gen,n,lambda){
                 
                 fpr_target_0=fpr_target_0,
                 
-                fpr_est_n=median(fpr_est_n_vec),
-                fpr_est_ppi=median(fpr_est_ppi_vec),
+                fpr_est_n=mean(fpr_est_n_vec),
+                fpr_est_ppi=mean(fpr_est_ppi_vec),
                 
-                fpr_sd_n=median(fpr_sd_n_vec),
-                fpr_sd_ppi=median(fpr_sd_ppi_vec),
+                fpr_sd_n=mean(fpr_sd_n_vec),
+                fpr_sd_ppi=mean(fpr_sd_ppi_vec),
                 
                 fpr_cov_n= mean(fpr_cov_n_vec),
                 fpr_cov_ppi= mean(fpr_cov_ppi_vec),
@@ -515,11 +516,11 @@ ppi.sim <- function(nrep,dat_gen,n,lambda){
                 
                 auc_target_0=auc_target_0,
                 
-                auc_est_n=median(auc_est_n_vec),
-                auc_est_ppi=median(auc_est_ppi_vec),
+                auc_est_n=mean(auc_est_n_vec),
+                auc_est_ppi=mean(auc_est_ppi_vec),
                 
-                auc_sd_n=median(auc_sd_n_vec),
-                auc_sd_ppi=median(auc_sd_ppi_vec),
+                auc_sd_n=mean(auc_sd_n_vec),
+                auc_sd_ppi=mean(auc_sd_ppi_vec),
               
                 auc_cov_n= mean(auc_cov_n_vec),
                 auc_cov_ppi= mean(auc_cov_ppi_vec)
@@ -555,8 +556,10 @@ ratio_list <- list()
 for (lambda_val in lambda_vals) {
   for (model in models) {
     # The path that saved the simulation results
-    folder_path <- paste0("your result path", sprintf("f_%s_n_1000_lambda_%s", model, lambda_val))
-    
+    folder_path <- file.path(
+      results_dir,
+      sprintf("f_%s_n_1000_lambda_%s", model, lambda_val)
+    )
     # find all simulation files
     sim_files <- list.files(
       path        = folder_path,
@@ -657,7 +660,7 @@ ratio_sec2 <- ggplot(df_ratio,
 
 # save Figure 1:
 ggsave(
-  filename = paste0("your result path","ratio_if_5f_5lambda.png"),
+  filename = file.path(results_dir, "ratio_if_5f_5lambda.png"),
   plot = ratio_sec2,
   width = 8,       
   height = 4,     
@@ -672,10 +675,17 @@ lambda_val <- 0.1
 alpha_lvls <- seq(0.01, 0.99, by = 0.05) # nominal coverage levels
 metrics    <- c("mean", "tpr", "fpr", "auc")
 methods    <- c("n", "ppi")
-
+for (n_cov in nvec) {
+  message(
+    "Creating coverage results: n = ", n_cov,
+    ", lambda = ", lambda_val
+  )
 cov_results <- map_dfr(models, function(model) {
-  folder_name <- sprintf("f_%s_n_10000_lambda_%s", model, lambda_val)
-  folder_path <- paste0("your result path", sprintf("f_%s_n_10000_lambda_%s", model, lambda_val))
+  folder_name <- sprintf(
+    "f_%s_n_%s_lambda_%s",
+    model, n_cov, lambda_val
+  )
+  folder_path <- file.path(results_dir, folder_name)
   
   if (!dir.exists(folder_path)) {
     stop("Folder not found: ", folder_path)
@@ -683,7 +693,7 @@ cov_results <- map_dfr(models, function(model) {
   
   # load the targets
   sum_env <- new.env()
-  load(file.path(folder_path, "res.summary.RData"), envir = sum_env)
+  load(file.path(folder_path, "res.summary.Rdata"), envir = sum_env)
   targets <- sum_env$res
   
   # find all sim files 
@@ -808,21 +818,43 @@ cov_plot <- ggplot(df_final,
         legend.position = "bottom")
 
 ggsave(
-  filename = paste0("your result path","cov_plot.png"),
+  filename = file.path(
+    results_dir,
+    sprintf("cov_plot_n_%s_lambda_%s.png", n_cov, lambda_val)
+  ),
   plot = cov_plot,
   width = 8.5,       
   height = 4,     
   units = "in",    
   dpi = 300       
 )
+# Save numerical coverage results for the current sample size.
+coverage_table <- transform(
+  cov_results,
+  n = n_cov,
+  lambda = lambda_val,
+  nominal_coverage = 1 - alpha
+)
 
+coverage_file <- file.path(
+  results_dir,
+  sprintf("coverage_n_%s_lambda_%s.csv", n_cov, lambda_val)
+)
+
+write.csv(
+  coverage_table,
+  file = coverage_file,
+  row.names = FALSE
+)
+
+message("Saved coverage table: ", coverage_file)
+}
 # Code for generating Figure S.6
 models      <- c("all", "ideal", "noise", "bad", "pure_noise")
 lambda_vals <- c(0.01, 0.1, 0.25, 0.5, 0.8)
 metrics     <- c("mean", "tpr", "fpr", "auc")
 
-base_dir <- "your result path"
-
+base_dir <- results_dir
 diff_list <- list()
 
 for (lambda_val in lambda_vals) {
@@ -834,34 +866,61 @@ for (lambda_val in lambda_vals) {
       stop("Folder not found: ", folder_path)
     }
     
-    # Load res.summary.RData into env
+    # Read the saved targets.
     sum_env <- new.env()
-    load(file.path(folder_path, "res.summary.RData"), envir = sum_env)
+    load(
+      file.path(folder_path, "res.summary.Rdata"),
+      envir = sum_env
+    )
     res <- sum_env$res
     
-    # Compute mean(est_ppi - target_0) for each metric
+    # Read individual simulation estimates once per scenario.
+    sim_files <- list.files(
+      folder_path,
+      pattern = "^res\\.[0-9]+\\.(RData|rda)$",
+      full.names = TRUE,
+      ignore.case = TRUE
+    )
+    
+    if (length(sim_files) == 0L) {
+      stop("No numbered replication files found in: ", folder_path)
+    }
+    
+    message(
+      "Computing bias: f=", model,
+      ", lambda=", lambda_val,
+      "; reading ", length(sim_files), " replications"
+    )
+    
+    sims <- lapply(sim_files, function(sim_file) {
+      e <- new.env()
+      load(sim_file, envir = e)
+      e$res.i
+    })
+    
+    # Compute mean estimation error from replication-level estimates.
     for (metric in metrics) {
-      est_name    <- paste0(metric, "_est_ppi")
+      est_name <- paste0(metric, "_est_ppi_i")
       target_name <- paste0(metric, "_target_0")
       
-      if (!(est_name %in% names(res))) {
-        stop("Missing in res: ", est_name, " (folder: ", folder_path, ")")
-      }
-      if (!(target_name %in% names(res))) {
-        stop("Missing in res: ", target_name, " (folder: ", folder_path, ")")
-      }
+      estimates <- vapply(
+        sims,
+        function(x) as.numeric(x[[est_name]]),
+        numeric(1)
+      )
       
-      diff_vec  <- res[[est_name]] - res[[target_name]]
-      mean_diff <- mean(diff_vec, na.rm = TRUE)
+      mean_diff <- mean(
+        estimates - res[[target_name]],
+        na.rm = TRUE
+      )
       
-      diff_list[[length(diff_list) + 1]] <-
-        data.frame(
-          model     = model,
-          lambda    = lambda_val,
-          metric    = metric,
-          mean_diff = mean_diff,
-          stringsAsFactors = FALSE
-        )
+      diff_list[[length(diff_list) + 1L]] <- data.frame(
+        model = model,
+        lambda = lambda_val,
+        metric = metric,
+        mean_diff = mean_diff,
+        stringsAsFactors = FALSE
+      )
     }
   }
 }
@@ -924,7 +983,7 @@ diff_sec2 <- ggplot(df_diff,
   )
 
 ggsave(
-  filename = paste0("your result path","bias_sec2.png"),
+  filename = file.path(base_dir, "bias_sec2.png"),
   plot     = diff_sec2,
   width    = 8,
   height   = 4,

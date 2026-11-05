@@ -1,57 +1,38 @@
-# simulation code for Section B.2.3
-# constructing PPI estimators under no covariate distribution shift
-
+# simulation code for Section B.2.2 (illustrating Section 5.3)
+# PPI estimators for TPR, FPR, and AUC when f(X) itself is the biomarker
 expit <- function(a){ return(exp(a)/(1+exp(a)))}
-
-## mean
-# point estimation
-mean.est.yn <- function(dat){ 
-  return(mean(dat$Y))
-}
-mean.est.fxn <- function(dat){ 
-  return(mean(dat$f))
-}
-# influence function computation
-mean.phi.yn <- function(dat){ 
-  return(dat$Y-mean(dat$Y))
-}
-
-mean.phi.fxn <- function(dat){
-  return(dat$f-mean(dat$f))
-}
 
 ## tpr
 # point estimation
 tpr.est.yn <- function(dat){
-  return(sum((dat$R>alpha)*dat$Y)/sum(dat$Y))
+  return(sum((dat$score>alpha)*dat$Y)/sum(dat$Y))
 }
 tpr.est.fxn <- function(dat){
-  return(sum((dat$R>alpha)*dat$f)/sum(dat$f))
+  return(sum((dat$score>alpha)*dat$f)/sum(dat$f))
 }
 # influence function computation
 tpr.phi.yn <- function(dat){
-  return(1*(dat$R>alpha)*dat$Y/mean(dat$Y) - mean((dat$R>alpha)*dat$Y)*dat$Y/(mean(dat$Y))^2)
+  return(1*(dat$score>alpha)*dat$Y/mean(dat$Y) - mean((dat$score>alpha)*dat$Y)*dat$Y/(mean(dat$Y))^2)
 }
 tpr.phi.fxn <- function(dat){
-  return(1*(dat$R>alpha)*dat$f/mean(dat$f) - mean((dat$R>alpha)*dat$f)*dat$f/(mean(dat$f))^2)
+  return(1*(dat$score>alpha)*dat$f/mean(dat$f) - mean((dat$score>alpha)*dat$f)*dat$f/(mean(dat$f))^2)
 }
 
 ## fpr
 # point estimation
 fpr.est.yn <- function(dat){
-  return(sum((dat$R>alpha)*(1-dat$Y))/sum(1-dat$Y))
+  return(sum((dat$score>alpha)*(1-dat$Y))/sum(1-dat$Y))
 }
 fpr.est.fxn <- function(dat){
-  return(sum((dat$R>alpha)*(1-dat$f))/sum(1-dat$f))
+  return(sum((dat$score>alpha)*(1-dat$f))/sum(1-dat$f))
 }
 # influence function computation
 fpr.phi.yn <- function(dat){
-  return(1*(dat$R>alpha)*(1-dat$Y)/mean(1-dat$Y) - mean((dat$R>alpha)*(1-dat$Y))*(1-dat$Y)/(mean(1-dat$Y))^2)
+  return(1*(dat$score>alpha)*(1-dat$Y)/mean(1-dat$Y) - mean((dat$score>alpha)*(1-dat$Y))*(1-dat$Y)/(mean(1-dat$Y))^2)
 }
 fpr.phi.fxn <- function(dat){
-  return(1*(dat$R>alpha)*(1-dat$f)/mean(1-dat$f) - mean((dat$R>alpha)*(1-dat$f))*(1-dat$f)/(mean(1-dat$f))^2)
+  return(1*(dat$score>alpha)*(1-dat$f)/mean(1-dat$f) - mean((dat$score>alpha)*(1-dat$f))*(1-dat$f)/(mean(1-dat$f))^2)
 }
-
 
 ## AUC
 # point estimation
@@ -128,7 +109,8 @@ auc.phi.yn <- function(dat){
     DT[, fracPosLabelsWithLargerPreds := cumsum(label == pos)/n_pos] #fracPosLabelsWithLargerPreds: (1-E[I(R<=\alpha)Y]/E[Y]) at all R_i
     DT[, icVal := ifelse(label == pos, w1 * (fracNegLabelsWithSmallerPreds - auc),
                          w0 * (fracPosLabelsWithLargerPreds - auc))]
-    
+    #DT[, icVal :=  label*w1 * (fracNegLabelsWithSmallerPreds - auc)+(1-label)*w0 * (fracPosLabelsWithLargerPreds - auc)]
+    #return(mean(DT$icVal))
     return(DT$icVal)
   }
   return(.IC(fold_preds=predictions, fold_labels=labels, pos=1, neg=0, w1=w1, w0=w0))
@@ -159,12 +141,13 @@ auc.phi.fxn <- function(dat){
     DT[, fracNegLabelsWithSmallerPreds := cumsum(1-label)/n_neg]
     DT <- DT[order(-pred, label)] 
     DT[, fracPosLabelsWithLargerPreds := cumsum(label)/n_pos]
-    DT[, icVal :=  label*w1 * (fracNegLabelsWithSmallerPreds - auc_f) + (1-label)*w0 * (fracPosLabelsWithLargerPreds - auc_f)]
-    
+    DT[, icVal :=  label*w1 * (fracNegLabelsWithSmallerPreds - auc_f)+(1-label)*w0 * (fracPosLabelsWithLargerPreds - auc_f)]
+    #return(mean(DT$icVal))
     return(DT$icVal)
   }
   return(.IC(fold_preds=predictions, fold_labels=labels, w1=w1, w0=w0))
 }
+
 
 
 library(data.table)
@@ -172,134 +155,146 @@ library(ROCR)
 library(MASS)
 
 nvec <- c(1000) # n=1000
-
 lambdavec <- c(0.1) # \lambda=0.1
-
-f_types <- c("bad","ideal","pure_noise") # different prediction models f
-# "bad" is a random forest model predicting Y from (X_1,X_2)
-# "ideal" represents E[Y|R,X_1,X_2]
-# "pure_noise" is Unif[0.01,0.99], uniformly distributed random noise
+f_types <- c("all","ideal")
+# different prediction models f
+# "all" is a random forest model predicting Y from (R,X_1,...,X_5)
+# "ideal" represents E[Y|R,X_1,...,X_5]
 
 alpha <- 0.6
-results_dir <- paste0("your result path") 
-
+results_dir <- "results/section_B_2_2/"
+dir.create(results_dir, recursive = TRUE, showWarnings = FALSE)
 set.seed(2025)
 
-# The covariance matrix for (R, X_1, X_2)
-Var_mat_cor <- matrix(c(
-  1.00, 0.90, 0.82, 
-  0.90, 1.00, 0.49, 
-  0.82, 0.49, 1.00
-), nrow = 3, byrow = TRUE)
+# The covariance matrix of (R,X_1,...,X_5)
+Var_mat <- matrix(c(
+  1.0, 0.5, 0.3, 0.2, 0, 0,
+  0.5, 1.0, 0.4, 0.3, 0, 0,
+  0.3, 0.4, 1.0, 0.2, 0, 0,
+  0.2, 0.3, 0.2, 1.0, 0, 0,
+  0,   0,    0,   0,  1, 0,
+  0,  0,    0,   0,   0, 2
+), nrow=6, byrow=TRUE)
 
-# prespecified E[Y|R,X_1,X_2]
-beta_intcpt <- 0
+# prespecified E[Y|R,X_1,...,X_5]
+beta_intcpt <- -0.5
 beta_R  <-  1.0
+beta_X1q <- -0.9   # X_1^2
+beta_X2a <-  0.6   # |X_2|
+beta_X3c <-  0.5   # X_3^3
+beta_Rx3 <-  1.5   # R * X_3
+beta_X1x2 <- -0.7  # X_1 * X_2
 
 compute_eta_p <- function(df){
   eta <- with(df,
               beta_intcpt +
-                beta_R  * R 
+                beta_R  * R +
+                beta_X1q * X1^2 +
+                beta_X2a * abs(X2) +
+                beta_X3c * X3^3 +
+                beta_Rx3 * (R * X3) +
+                beta_X1x2 * (X1 * X2)
   )
-
-# transform to probability
+  
+  # transform to probability
   plogis(eta)
 }
 
-m <- 100000 # size of the training data for estimating the random forest prediction models
+m <- 100000 # size of the training data for estimating the random forest prediction model
 
-# generate (R,X_1,X_2) for the training data, with the same data generation process in Section B.2.3
-train_dat <- as.data.frame(mvrnorm(m, mu = c(0,2,0), Sigma = Var_mat_cor)) 
+# generate (R,X_1,...,X_5) for the training data, with the same data generation process in Section 6.1
+train_dat <- as.data.frame(mvrnorm(m, mu = c(0,0,0,0,3,20), Sigma = Var_mat)) 
 
-names(train_dat) <- c("R","X1","X2")
+names(train_dat) <- c("R","X1","X2","X3","X4","X5")
 
-# compute E[Y|R,X_1,X_2]
+# compute E[Y|R,X_1,...,X_5]
 train_dat$ideal <- compute_eta_p(train_dat)
 
-# generate Y for the training data, following the prespecified model E[Y|R,X_1,X_2]
+# generate Y for the training data, following the prespecified model E[Y|R,X_1,...,X_5]
 train_dat$Y <- rbinom(m, size=1, prob=train_dat$ideal)
 train_dat$Y <- factor(train_dat$Y, levels=0:1)  # for classification
 
 library(randomForest)
 
-# A random forest model predicting Y from (X_1,X_2)
-rf_bad <- randomForest(Y ~ X1 + X2,
-                         data = train_dat)
+# A random forest model predicting Y from (R,X_1,...,X_5)
+rf_all <- randomForest(Y ~ R + X1 + X2 + X3 + X4 + X5,
+                       data = train_dat)
 
-# data generation function
-dat_gen_cor <- function(n,N,f_type){
+# data generation -------------------------------------------------------------------
+dat_gen <- function(n,N,f_type){
   
   # generate the data to construct the labeled data estimators and PPI estimators
-  # following the same data generation process described in Section B.2.3
-  inf_dat <- as.data.frame(mvrnorm((n+N), mu=c(0,2,0), Sigma=Var_mat_cor))
-  names(inf_dat) <- c("R","X1","X2")
+  # following the same data generation process described in Section 6.1
+  inf_dat <- as.data.frame(mvrnorm((n+N), mu=c(0,0,0,0,3,20), Sigma=Var_mat))
+  names(inf_dat) <- c("R","X1","X2","X3","X4","X5")
   
-  inf_dat$ideal <- compute_eta_p(inf_dat) # the prespecified ideal f: E[Y|R,X_1,X_2]
+  inf_dat$ideal <- compute_eta_p(inf_dat) # the prespecified ideal f: E[Y|R,X_1,...,X_5]
   
-  inf_dat$Y <- rbinom(n+N, size=1, prob=inf_dat$ideal) # generating Y following the prespecified model
+  inf_dat$Y <- rbinom(n+N, size=1, prob=inf_dat$ideal)  # generating Y following the prespecified model
   
-  # obtain predictions using the "bad" random forest model
-  inf_dat$bad <- predict(rf_bad, newdata = inf_dat,type = "prob")[ ,"1"]
-  # obtain predictions using the "pure_noise" f
-  inf_dat$pure_noise <- runif(n+N,min=0.01, max=0.99)
+  # obtain predictions using the "all" random forest model
+  inf_dat$all <- predict(rf_all, newdata = inf_dat,type = "prob")[ ,"1"]
   
   # the f used for constructing PPI estimators
   inf_dat$f <- inf_dat[,f_type]
   
-  inf_dat$score <- inf_dat$R # this is for facilitating the AUC computation
+  # set f itself to be the biomarker
+  inf_dat$score <- inf_dat[,f_type]
   
   return(inf_dat)
 }
-
-
 
 # simulation function
 ppi.sim <- function(nrep,dat_gen,n,lambda){
   
   N <- n/lambda # compute N, the unlabeled dataset size
   
-  ## 10000 replications using fully labeled data to compute the targets
+  ## 10000 replications using fully labeled data to compute the target TPR, FPR, AUC
   target_rep <- 10000
-  mean_target_0_vec <- tpr_target_0_vec <- fpr_target_0_vec <- auc_target_0_vec <- vector("numeric",length = target_rep)
-  for(index in 1:target_rep){
-    
-    set.seed(index+4564356)
-    
-    inf_dat.index <- as.data.frame(mvrnorm((n+N), mu=c(0,2,0), Sigma=Var_mat_cor))
-    names(inf_dat.index) <- c("R","X1","X2")
-    
-    inf_dat.index$ideal <- compute_eta_p(inf_dat.index)
-    inf_dat.index$Y <- rbinom((n+N), size=1, prob=inf_dat.index$ideal) # generating Y
-    inf_dat.index$score <- inf_dat.index$R # facilitating the computation of AUC
-    
-    mean_target_0_vec[index] <- mean.est.yn(inf_dat.index)
-    tpr_target_0_vec[index] <- tpr.est.yn(inf_dat.index)
-    fpr_target_0_vec[index] <- fpr.est.yn(inf_dat.index)
-    auc_target_0_vec[index] <- auc.est.yn(inf_dat.index)
-  }
-  # compute the median of the 10000 replications as the targets
-  mean_target_0 <- median(mean_target_0_vec)
-  tpr_target_0 <- median(tpr_target_0_vec)
-  fpr_target_0 <- median(fpr_target_0_vec)
-  auc_target_0 <- median(auc_target_0_vec)
   
-  
-  for(k in 1:length(f_types)){
+  for(k in 1:length(f_types)){ # different f's corresponding to different biomarkers, and thus different targets
+
+    f_type <- f_types[k]
+    tpr_target_0_vec <- fpr_target_0_vec <- auc_target_0_vec <- vector("numeric",length = target_rep)
+    for(index in 1:target_rep){
+      
+      set.seed(index+4564356)
+      
+      inf_dat.index <- as.data.frame(mvrnorm((n+N), mu=c(0,0,0,0,3,20), Sigma=Var_mat)) # generating (R,X_1,...,X_5)
+      names(inf_dat.index) <- c("R","X1","X2","X3","X4","X5")
+      
+      # obtaining E[Y|R,X_1,...,X_5] as one of the biomarker candidates
+      inf_dat.index$ideal <- compute_eta_p(inf_dat.index)
+      inf_dat.index$Y <- rbinom((n+N), size=1, prob=inf_dat.index$ideal) # generating Y
+      
+      # obtaining f_all(R,X_1,...,X_5) as one of the biomarker candidates
+      inf_dat.index$all <- predict(rf_all, newdata = inf_dat.index,type = "prob")[ ,"1"]
+      
+      inf_dat.index$score <- inf_dat.index[,f_type] # set the f itself as the biomarker
+      
+      tpr_target_0_vec[index] <- tpr.est.yn(inf_dat.index)
+      fpr_target_0_vec[index] <- fpr.est.yn(inf_dat.index)
+      auc_target_0_vec[index] <- auc.est.yn(inf_dat.index)
+    }
+    # compute the mean of the 10000 replications as the targets
+    tpr_target_0 <- mean(tpr_target_0_vec)
+    fpr_target_0 <- mean(fpr_target_0_vec)
+    auc_target_0 <- mean(auc_target_0_vec)
     
     # for saving the labeled data estimators
-    mean_est_n_vec <- tpr_est_n_vec <- fpr_est_n_vec <- auc_est_n_vec <- vector("numeric",length = nrep)
+    tpr_est_n_vec <- fpr_est_n_vec <- auc_est_n_vec <- vector("numeric",length = nrep)
     # for saving the PPI estimators
-    mean_est_ppi_vec <- tpr_est_ppi_vec <- fpr_est_ppi_vec <- auc_est_ppi_vec <- vector("numeric",length = nrep)
+    tpr_est_ppi_vec <- fpr_est_ppi_vec <- auc_est_ppi_vec <- vector("numeric",length = nrep)
     # for saving the \omega
-    mean_omega_vec <- tpr_omega_vec <- fpr_omega_vec <- auc_omega_vec  <- vector("numeric",length = nrep)
+    tpr_omega_vec <- fpr_omega_vec <- auc_omega_vec  <- vector("numeric",length = nrep)
     # for saving the se estimates for the labeled data estimators
-    mean_sd_n_vec <- tpr_sd_n_vec <- fpr_sd_n_vec <- auc_sd_n_vec <- vector("numeric",length=nrep)
+    tpr_sd_n_vec <- fpr_sd_n_vec <- auc_sd_n_vec <- vector("numeric",length=nrep)
     # for saving the se estimates for the PPI estimators
-    mean_sd_ppi_vec <- tpr_sd_ppi_vec <- fpr_sd_ppi_vec <- auc_sd_ppi_vec <-  vector("numeric",length=nrep)
+    tpr_sd_ppi_vec <- fpr_sd_ppi_vec <- auc_sd_ppi_vec <-  vector("numeric",length=nrep)
     # for saving the coverage for the labeled data estimators
-    mean_cov_n_vec <- tpr_cov_n_vec <- fpr_cov_n_vec <- auc_cov_n_vec <- vector("numeric",length=nrep)
+    tpr_cov_n_vec <- fpr_cov_n_vec <- auc_cov_n_vec <- vector("numeric",length=nrep)
     # for saving the coverage for the PPI estimators
-    mean_cov_ppi_vec <- tpr_cov_ppi_vec <- fpr_cov_ppi_vec <- auc_cov_ppi_vec <-  vector("numeric",length=nrep)
+    tpr_cov_ppi_vec <- fpr_cov_ppi_vec <- auc_cov_ppi_vec <-  vector("numeric",length=nrep)
     
     current_path <- paste(results_dir,'f_',f_types[k],'_n_',n,'_lambda_',lambda,'/',sep='')
     dir.create(file.path(current_path),showWarnings = FALSE)
@@ -307,46 +302,37 @@ ppi.sim <- function(nrep,dat_gen,n,lambda){
     # simulations -------------------------------------------------------------
     
     for( i in 1:nrep){
-      
+    
       set.seed(i)
       dat.i <- dat_gen(n,N,f_types[k])
+      
       
       # Y is observed in n observations
       dat_n.i <- dat.i[1:n,]
       
-      mean_phi_n.i <- mean.phi.yn(dat_n.i)
       tpr_phi_n.i <- tpr.phi.yn(dat_n.i)
       fpr_phi_n.i <- fpr.phi.yn(dat_n.i)
       auc_phi_n.i <- auc.phi.yn(dat_n.i)
       
-      mean_phi_f_n.i <- mean.phi.fxn(dat_n.i)
       tpr_phi_f_n.i <- tpr.phi.fxn(dat_n.i)
       fpr_phi_f_n.i <- fpr.phi.fxn(dat_n.i)
       auc_phi_f_n.i <- auc.phi.fxn(dat_n.i)
       
-      mean_est_n.i <- mean.est.yn(dat_n.i)
       tpr_est_n.i <- tpr.est.yn(dat_n.i)
       fpr_est_n.i <- fpr.est.yn(dat_n.i)
       auc_est_n.i <- auc.est.yn(dat_n.i)
       
       # record the labeled data estimators
-      mean_est_n_vec[i] <- mean_est_n.i
       tpr_est_n_vec[i] <- tpr_est_n.i
       fpr_est_n_vec[i] <- fpr_est_n.i
       auc_est_n_vec[i] <- auc_est_n.i
       
       # record the se estimates of the labeled data estimator
-      mean_sd_n_vec[i] <- sqrt(var(mean_phi_n.i))/sqrt(n)
       tpr_sd_n_vec[i] <- sqrt(var(tpr_phi_n.i))/sqrt(n)
       fpr_sd_n_vec[i] <- sqrt(var(fpr_phi_n.i))/sqrt(n)
       auc_sd_n_vec[i] <- sqrt(var(auc_phi_n.i))/sqrt(n)
       
       # record the coverage of the labeled data estimator
-      if(mean_est_n.i+1.96*mean_sd_n_vec[i] >= mean_target_0 & mean_est_n.i-1.96*mean_sd_n_vec[i] <= mean_target_0){
-        mean_cov_n_vec[i] <- 1
-      }else{
-        mean_cov_n_vec[i] <- 0
-      }
       if(tpr_est_n.i+1.96*tpr_sd_n_vec[i] >= tpr_target_0 & tpr_est_n.i-1.96*tpr_sd_n_vec[i] <= tpr_target_0){
         tpr_cov_n_vec[i] <- 1
       }else{
@@ -363,19 +349,15 @@ ppi.sim <- function(nrep,dat_gen,n,lambda){
         auc_cov_n_vec[i] <- 0
       }
       
-      mean_phi_f_all.i <- mean.phi.fxn(dat.i)
       tpr_phi_f_all.i <- tpr.phi.fxn(dat.i)
       fpr_phi_f_all.i <- fpr.phi.fxn(dat.i)
       auc_phi_f_all.i <- auc.phi.fxn(dat.i)
       
       # compute \omega
-      mean_omega_vec[i] <- cov(mean_phi_n.i,mean_phi_f_n.i)/(var(mean_phi_f_all.i))
       tpr_omega_vec[i] <- cov(tpr_phi_n.i,tpr_phi_f_n.i)/(var(tpr_phi_f_all.i))
       fpr_omega_vec[i] <- cov(fpr_phi_n.i,fpr_phi_f_n.i)/(var(fpr_phi_f_all.i))
       auc_omega_vec[i] <- cov(auc_phi_n.i,auc_phi_f_n.i)/(var(auc_phi_f_all.i))
       
-      mean_est_f_all.i <- mean.est.fxn(dat.i)
-      mean_est_f_n.i <- mean.est.fxn(dat_n.i)
       tpr_est_f_all.i <- tpr.est.fxn(dat.i)
       tpr_est_f_n.i <- tpr.est.fxn(dat_n.i)
       fpr_est_f_all.i <- fpr.est.fxn(dat.i)
@@ -384,28 +366,21 @@ ppi.sim <- function(nrep,dat_gen,n,lambda){
       auc_est_f_n.i <- auc.est.fxn(dat_n.i)
       
       # construct the PPI estimator
-      mean_est_ppi_vec[i] <- mean_est_n.i + mean_omega_vec[i]*(mean_est_f_all.i - mean_est_f_n.i)
       tpr_est_ppi_vec[i] <- tpr_est_n.i + tpr_omega_vec[i]*(tpr_est_f_all.i - tpr_est_f_n.i)
       fpr_est_ppi_vec[i] <- fpr_est_n.i + fpr_omega_vec[i]*(fpr_est_f_all.i - fpr_est_f_n.i)
       auc_est_ppi_vec[i] <- auc_est_n.i + auc_omega_vec[i]*(auc_est_f_all.i - auc_est_f_n.i)
       
       # record the se estimates of the PPI estimators
-      mean_sd_ppi_vec[i] <- sqrt((var(mean_phi_n.i)-cov(mean_phi_f_n.i,mean_phi_n.i)^2/(var(mean_phi_f_all.i)+lambda*var(mean_phi_f_all.i)))/n)
       tpr_sd_ppi_vec[i] <- sqrt((var(tpr_phi_n.i)-cov(tpr_phi_f_n.i,tpr_phi_n.i)^2/(var(tpr_phi_f_all.i)+lambda*var(tpr_phi_f_all.i)))/n)
       fpr_sd_ppi_vec[i] <- sqrt((var(fpr_phi_n.i)-cov(fpr_phi_f_n.i,fpr_phi_n.i)^2/(var(fpr_phi_f_all.i)+lambda*var(fpr_phi_f_all.i)))/n)
       auc_sd_ppi_vec[i] <- sqrt((var(auc_phi_n.i)-cov(auc_phi_f_n.i,auc_phi_n.i)^2/(var(auc_phi_f_all.i)+lambda*var(auc_phi_f_all.i)))/n)
       
-      if(mean_sd_ppi_vec[i]=='NaN'|tpr_sd_ppi_vec[i]=='NaN'|fpr_sd_ppi_vec[i]=='NaN'|auc_sd_ppi_vec[i]=='NaN'){
+      if(tpr_sd_ppi_vec[i]=='NaN'|fpr_sd_ppi_vec[i]=='NaN'|auc_sd_ppi_vec[i]=='NaN'){
         print(i)
         stop()
       }
       
       # record the coverage of the PPI estimators
-      if(mean_est_ppi_vec[i]+1.96*mean_sd_ppi_vec[i] >= mean_target_0 & mean_est_ppi_vec[i]-1.96*mean_sd_ppi_vec[i] <= mean_target_0){
-        mean_cov_ppi_vec[i] <- 1
-      }else{
-        mean_cov_ppi_vec[i] <- 0
-      }
       if(tpr_est_ppi_vec[i]+1.96*tpr_sd_ppi_vec[i] >= tpr_target_0 & tpr_est_ppi_vec[i]-1.96*tpr_sd_ppi_vec[i] <= tpr_target_0){
         tpr_cov_ppi_vec[i] <- 1
       }else{
@@ -423,104 +398,89 @@ ppi.sim <- function(nrep,dat_gen,n,lambda){
       }
       
       # save the i_th simulation results
-      res.i <- list(mean_est_n_i=mean_est_n_vec[i],
-                    mean_est_ppi_i=mean_est_ppi_vec[i],
-                    
-                    mean_sd_n_i=mean_sd_n_vec[i],
-                    mean_sd_ppi_i=mean_sd_ppi_vec[i],
-                    
-                    tpr_est_n_i=tpr_est_n_vec[i],
-                    tpr_est_ppi_i=tpr_est_ppi_vec[i],
-                    
-                    tpr_sd_n_i=tpr_sd_n_vec[i],
-                    tpr_sd_ppi_i=tpr_sd_ppi_vec[i],
-                    
-                    fpr_est_n_i=fpr_est_n_vec[i],
-                    fpr_est_ppi_i=fpr_est_ppi_vec[i],
-                    
-                    fpr_sd_n_i=fpr_sd_n_vec[i],
-                    fpr_sd_ppi_i=fpr_sd_ppi_vec[i],
-                    
-                    auc_est_n_i=auc_est_n_vec[i],
-                    auc_est_ppi_i=auc_est_ppi_vec[i],
-                    
-                    auc_sd_n_i=auc_sd_n_vec[i],
-                    auc_sd_ppi_i=auc_sd_ppi_vec[i]
+      res.i <- list(
+        tpr_est_n_i=tpr_est_n_vec[i],
+        tpr_est_ppi_i=tpr_est_ppi_vec[i],
+        
+        tpr_sd_n_i=tpr_sd_n_vec[i],
+        tpr_sd_ppi_i=tpr_sd_ppi_vec[i],
+        
+        fpr_est_n_i=fpr_est_n_vec[i],
+        fpr_est_ppi_i=fpr_est_ppi_vec[i],
+        
+        fpr_sd_n_i=fpr_sd_n_vec[i],
+        fpr_sd_ppi_i=fpr_sd_ppi_vec[i],
+        
+        auc_est_n_i=auc_est_n_vec[i],
+        auc_est_ppi_i=auc_est_ppi_vec[i],
+        
+        auc_sd_n_i=auc_sd_n_vec[i],
+        auc_sd_ppi_i=auc_sd_ppi_vec[i]
       )
       save(res.i, file = paste(current_path,"res.",i,'.Rdata',sep=''))
     }
     
-    # save the simulation results for one simulation scenario
-    res <- list(mean_target_0=mean_target_0,
-                
-                mean_est_n=median(mean_est_n_vec),
-                mean_est_ppi=median(mean_est_ppi_vec),
-                
-                mean_sd_n=median(mean_sd_n_vec),
-                mean_sd_ppi=median(mean_sd_ppi_vec),
-                
-                mean_cov_n= mean(mean_cov_n_vec),
-                mean_cov_ppi= mean(mean_cov_ppi_vec),
-                
-                
-                tpr_target_0=tpr_target_0,
-                
-                tpr_est_n=median(tpr_est_n_vec),
-                tpr_est_ppi=median(tpr_est_ppi_vec),
-                
-                tpr_sd_n=median(tpr_sd_n_vec),
-                tpr_sd_ppi=median(tpr_sd_ppi_vec),
-                
-                tpr_cov_n= mean(tpr_cov_n_vec),
-                tpr_cov_ppi= mean(tpr_cov_ppi_vec),
-                
-                
-                fpr_target_0=fpr_target_0,
-                
-                fpr_est_n=median(fpr_est_n_vec),
-                fpr_est_ppi=median(fpr_est_ppi_vec),
-                
-                fpr_sd_n=median(fpr_sd_n_vec),
-                fpr_sd_ppi=median(fpr_sd_ppi_vec),
-                
-                fpr_cov_n= mean(fpr_cov_n_vec),
-                fpr_cov_ppi= mean(fpr_cov_ppi_vec),
-                
-                
-                auc_target_0=auc_target_0,
-                
-                auc_est_n=median(auc_est_n_vec),
-                auc_est_ppi=median(auc_est_ppi_vec),
-                
-                auc_sd_n=median(auc_sd_n_vec),
-                auc_sd_ppi=median(auc_sd_ppi_vec),
-                
-                auc_cov_n= mean(auc_cov_n_vec),
-                auc_cov_ppi= mean(auc_cov_ppi_vec)
-                
+    # save the simulation results for one f as the biomarker
+    res <- list(
+      tpr_target_0=tpr_target_0,
+      
+      tpr_est_n=mean(tpr_est_n_vec),
+      tpr_est_ppi=mean(tpr_est_ppi_vec),
+      
+      tpr_sd_n=mean(tpr_sd_n_vec),
+      tpr_sd_ppi=mean(tpr_sd_ppi_vec),
+      
+      tpr_cov_n= mean(tpr_cov_n_vec),
+      tpr_cov_ppi= mean(tpr_cov_ppi_vec),
+
+      
+      fpr_target_0=fpr_target_0,
+      
+      fpr_est_n=mean(fpr_est_n_vec),
+      fpr_est_ppi=mean(fpr_est_ppi_vec),
+      
+      fpr_sd_n=mean(fpr_sd_n_vec),
+      fpr_sd_ppi=mean(fpr_sd_ppi_vec),
+      
+      fpr_cov_n= mean(fpr_cov_n_vec),
+      fpr_cov_ppi= mean(fpr_cov_ppi_vec),
+      
+      
+      auc_target_0=auc_target_0,
+      
+      auc_est_n=mean(auc_est_n_vec),
+      auc_est_ppi=mean(auc_est_ppi_vec),
+      
+      auc_sd_n=mean(auc_sd_n_vec),
+      auc_sd_ppi=mean(auc_sd_ppi_vec),
+      
+      auc_cov_n= mean(auc_cov_n_vec),
+      auc_cov_ppi= mean(auc_cov_ppi_vec)
     )
     save(res,file=paste(current_path,'res.summary.Rdata',sep=''))
   }
+  
 }
 
-# Simulation for Section B.2.3, for n=1000, \lambda=0.1, over 2500 replications
-ppi.sim(nrep=2500,dat_gen_cor,n=nvec[1],lambda = lambdavec[1])
+# Simulation for Section B.2.4, for n=1000, \lambda=0.1, over 2500 replications
+ppi.sim(nrep=2500,dat_gen,n=nvec[1],lambda = lambdavec[1])
 
-# Code for generating Figure S.3
+# Code for generating Figure S.1
 library(tidyverse)
 library(ggplot2)
 
-models      <- c("ideal", "bad","pure_noise")
+models      <- c("all", "ideal")
 lambda_vals <- c(0.1) 
-metrics     <- c("mean", "tpr", "fpr", "auc")
+metrics     <- c("tpr", "fpr", "auc")
 
 ratio_list <- list()
 
 for (lambda_val in lambda_vals) {
   for (model in models) {
-    folder_path <- paste0("your result path",sprintf("f_%s_n_1000_lambda_%s", model, lambda_val))
-    
-    # find all simulation files
+    folder_path <- file.path(
+      results_dir,
+      sprintf("f_%s_n_1000_lambda_%s", model, lambda_val)
+    )
     sim_files <- list.files(
       path        = folder_path,
       pattern     = "^res\\.[0-9]+\\.(RData|rda)$",
@@ -559,54 +519,33 @@ for (lambda_val in lambda_vals) {
   }
 }
 
+# bind into a data.frame 
 df_ratio <- bind_rows(ratio_list)
 df_ratio$metric <- recode(df_ratio$metric,
-                          mean = "Mean",
                           tpr  = "TPR",
                           fpr  = "FPR",
                           auc  = "AUC")
-df_ratio$metric <- factor(df_ratio$metric, levels = c("Mean", "TPR", "FPR", "AUC"))
+df_ratio$metric <- factor(df_ratio$metric, levels = c("TPR", "FPR", "AUC"))
 df_ratio$lambda <- factor(df_ratio$lambda, levels = lambda_vals)
 
-cor_ratio_if <- ggplot(df_ratio,
-                       aes(x     = model,
-                           y     = mean_ratio,
-                           color = model,
-                           shape = model,
-                           group = model)) +
-  geom_point(size = 2.5) +
-  facet_wrap(~ metric, nrow = 1) +
+# Left panel: Figure S.1(a)
+df_all_ratio <- df_ratio %>% filter(model=="all")
+
+rem_ratio_all <- ggplot(df_all_ratio,
+                        aes(x     = metric,
+                            y     = mean_ratio,
+                            color = metric,
+                            shape = metric,
+                            group = metric)) +
+  geom_point(size = 3) +
   labs(
     x     = expression(lambda==0.1),
     y     = expression(mean(hat(sigma)[PPI] / hat(sigma)[lab])),
-    color = "Prediction model",
-    shape = "Prediction model",
+    color = expression(RF*"("*Y* plain("~")*R+X[1]+...+X[5]*")  "),
+    shape = expression(RF*"("*Y* plain("~")*R+X[1]+...+X[5]*")  "),
     title = ""
-  )+
-  scale_color_manual(
-    values = c("ideal"="salmon","bad"="chartreuse4","pure_noise"="turquoise3"),
-    labels = c(
-      "bad"= expression(RF*"("*Y* plain("~")*X[1]+X[2]*")"),
-      "ideal"= expression(Pr(Y==1~"|"~ bold(X))),
-      "pure_noise"="Unif[0.01,0.99]"
-    )
-  )+
-  scale_shape_manual(
-    values = c("ideal"=16,"bad"=17,"pure_noise"=15),
-    labels = c(
-      "bad"= expression(RF*"("*Y* plain("~")*X[1]+X[2]*")"),
-      "ideal"= expression(Pr(Y==1~"|"~ bold(X))),
-      "pure_noise"="Unif[0.01,0.99]"
-    )
-  )+
-  scale_x_discrete(
-    breaks = c("ideal","bad", "pure_noise"),        
-    labels = c(
-      "bad"= expression(RF*"("*Y* plain("~")*X[1]+X[2]*")"),
-      "ideal"= expression(Pr(Y==1~"|"~ bold(X))),
-      "pure_noise"="Unif[0.01,0.99]"
-    )
   ) +
+  coord_cartesian(ylim = c(0.6, 1))+
   theme_minimal(base_size = 14) +
   theme_bw()+
   theme( 
@@ -614,33 +553,65 @@ cor_ratio_if <- ggplot(df_ratio,
     axis.title = element_text(size = 14),
     panel.spacing = unit(1, "lines"),
     strip.text    = element_text(face = "bold"),
-    legend.position = "bottom",
-    axis.text.x = element_text(
-      angle = 45,
-      hjust = 1
-    )
+    legend.position = "bottom"
   )
 ggsave(
-  filename = paste0("your result path","ratio_if.png"),
-  plot = cor_ratio_if,
-  width = 8,       
-  height = 4,     
+  filename = file.path(results_dir, "ratio_all.png"),
+  plot = rem_ratio_all,
+  width = 6,      
+  height = 4,      
   units = "in",    
   dpi = 300        
 )
 
-# Code for generating Figure S.4
+df_ideal_ratio <- df_ratio %>% filter(model=="ideal")
 
-models     <- c("ideal","bad","pure_noise")
+# Right panel: Figure S.1(b)
+rem_ratio_ideal <- ggplot(df_ideal_ratio,
+                          aes(x     = metric,
+                              y     = mean_ratio,
+                              color = metric,
+                              shape = metric,
+                              group = metric)) +
+  geom_point(size = 3) +
+  labs(
+    x     = expression(lambda==0.1),
+    y     = expression(mean(hat(sigma)[PPI] / hat(sigma)[lab])),
+    color = expression(Pr(Y==1~"|"~ R,X[1],...,X[5])*"   "),
+    shape = expression(Pr(Y==1~"|"~ R,X[1],...,X[5])*"   "),
+    title = ""
+  ) +
+  coord_cartesian(ylim = c(0.6, 1))+
+  theme_minimal(base_size = 14) +
+  theme_bw()+
+  theme( 
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 14),
+    panel.spacing = unit(1, "lines"),
+    strip.text    = element_text(face = "bold"),
+    legend.position = "bottom"
+  )
+ggsave(
+  filename = file.path(results_dir, "ratio_ideal.png"),
+  plot = rem_ratio_ideal,
+  width = 6,       
+  height = 4,      
+  units = "in",    
+  dpi = 300       
+)
+
+# Code for generating Figure S.2
+models     <- c("all", "ideal")
 lambda_val <- 0.1
 alpha_lvls <- seq(0.04, 0.99, by = 0.05) # nominal coverage levels
-metrics    <- c("mean","tpr", "fpr", "auc")
+metrics    <- c("tpr", "fpr", "auc")
 methods    <- c("n", "ppi")
 
 cov_results <- map_dfr(models, function(model) {
   # build the folder path
   folder_name <- sprintf("f_%s_n_1000_lambda_%s", model, lambda_val)
-  folder_path <- paste0("your result path",sprintf("f_%s_n_1000_lambda_%s", model, lambda_val))
+  folder_path <- file.path(results_dir, folder_name)
+  
   
   if (!dir.exists(folder_path)) {
     stop("Folder not found: ", folder_path)
@@ -648,7 +619,7 @@ cov_results <- map_dfr(models, function(model) {
   
   # load the targets
   sum_env <- new.env()
-  load(file.path(folder_path, "res.summary.RData"), envir = sum_env)
+  load(file.path(folder_path, "res.summary.Rdata"), envir = sum_env)
   targets <- sum_env$res
   
   # find all sim files 
@@ -696,81 +667,126 @@ cov_results <- map_dfr(models, function(model) {
     dplyr::select(model, alpha, method, metric, coverage)
 })
 
-df <- cov_results
-df_n_collapsed <- df %>%
-  filter(method == "n") %>%
-  group_by(alpha,metric) %>%
-  summarise(
-    coverage = first(coverage),
-    method = "n",
-    model = "zonlylabest",
-    .groups = "drop"
+#df <- cov_results
+#df_n_collapsed <- df %>%
+#  filter(method == "n") %>%
+#  group_by(alpha,metric) %>%
+#  summarise(
+#    coverage = first(coverage),
+#    method = "n",
+#    model = "zonlylabest",
+#    .groups = "drop"
+#  )
+#df_others <- df %>%
+#  filter(!(method == "n"))
+df_final <- cov_results
+
+# Explicit panel labels and order.
+df_final$metric <- factor(
+  toupper(as.character(df_final$metric)),
+  levels = c("TPR", "FPR", "AUC")
+)
+
+# Retain both labeled-only results.
+plot_levels <- c("all", "ideal", "zonlylabest")
+
+df_final$plot_model <- factor(
+  ifelse(
+    df_final$method == "n",
+    "zonlylabest",
+    as.character(df_final$model)
+  ),
+  levels = plot_levels
+)
+
+# Identical mappings for plotted points and legend symbols.
+plot_colors <- c(
+  all = "salmon",
+  ideal = "chartreuse4",
+  zonlylabest = "orchid"
+)
+
+plot_shapes <- c(
+  all = 16,
+  ideal = 17,
+  zonlylabest = 18
+)
+
+plot_labels <- expression(
+  RF * "(" * Y * plain("~") * R + X[1] + ... + X[5] * ")",
+  Pr(Y == 1 ~ "|" ~ R, X[1], ..., X[5]),
+  "Only using labeled data"
+)
+
+rem_cov <- ggplot(
+  df_final,
+  aes(
+    x = 1-alpha,
+    y = coverage,
+    color = plot_model,
+    shape = plot_model,
+    group = interaction(model, method)
   )
-df_others <- df %>%
-  filter(!(method == "n"))
-
-df_final <- bind_rows(df_others, df_n_collapsed)
-df_final$metric <- recode(df_final$metric,
-                          mean = "Mean",
-                          tpr  = "TPR",
-                          fpr  = "FPR",
-                          auc  = "AUC")
-df_final$metric <- factor(df_final$metric, levels = c("Mean","TPR", "FPR", "AUC"))
-
-cor_cov <- ggplot(df_final,
-                  aes(x = 1-alpha, y = coverage,
-                      color    = model,
-                      linetype = model)) +
-  geom_point(aes(shape = model),
-             size=1.8) +
-  facet_wrap( ~ metric,nrow=1) +
-  coord_fixed() +
+) +
+  geom_point(size = 1.8, show.legend = TRUE) +
+  facet_wrap(~ metric, nrow = 1, drop = FALSE) +
+  coord_fixed(ratio = 1) +
   scale_color_manual(
-    values = c("ideal"="salmon","bad"="chartreuse4","pure_noise"="turquoise3","zonlylabest"="orchid"),
-    labels = c(
-      "bad"= expression(RF*"("*Y* plain("~")*X[1]+X[2]*")"),
-      "ideal"= expression(Pr(Y==1~"|"~ R,X[1],X[2])),
-      "pure_noise"="Unif[0.01,0.99]",
-      "zonlylabest" = "Only using labeled data"
+    name = NULL,
+    values = plot_colors,
+    limits = plot_levels,
+    breaks = plot_levels,
+    labels = plot_labels,
+    drop = FALSE,
+    guide = guide_legend(
+      override.aes = list(
+        colour = unname(plot_colors[plot_levels]),
+        shape = unname(plot_shapes[plot_levels]),
+        size = 1.8,
+        alpha = 1
+      )
     )
-  )+
-  scale_linetype_manual(
-    values = c("ideal"="solid","bad"="dashed","pure_noise"="dotted","zonlylabest"="dotdash"),
-    labels = c(
-      "bad"= expression(RF*"("*Y* plain("~")*X[1]+X[2]*")"),
-      "ideal"= expression(Pr(Y==1~"|"~ R,X[1],X[2])),
-      "pure_noise"="Unif[0.01,0.99]",
-      "zonlylabest" = "Only using labeled data"
-    )
-  )+
+  ) +
   scale_shape_manual(
-    values = c("ideal"=16,"bad"=17,"pure_noise"=15,"zonlylabest"=18),
-    labels = c(
-      "bad"= expression(RF*"("*Y* plain("~")*X[1]+X[2]*")"),
-      "ideal"= expression(Pr(Y==1~"|"~ R,X[1],X[2])),
-      "pure_noise"="Unif[0.01,0.99]",
-      "zonlylabest" = "Only using labeled data"
-    )
-  )+
+    name = NULL,
+    values = plot_shapes,
+    limits = plot_levels,
+    breaks = plot_levels,
+    labels = plot_labels,
+    drop = FALSE,
+    guide = "none"
+  ) +
   labs(
-    color=NULL, linetype=NULL, shape= NULL,
-    x     = "Nominal coverage",
-    y     = "Empirical coverage",
+    x = "Nominal coverage",
+    y = "Empirical coverage",
     title = ""
   ) +
-  geom_abline(slope = 1, intercept = 0, linetype="dashed",color="red",linewidth=0.6)+
-  theme_bw()+
-  theme(panel.spacing = unit(2, "lines"),
-        axis.text = element_text(size = 10),
-        axis.title = element_text(size = 14),
-        strip.text = element_text(face = "bold"),
-        legend.position = "bottom")
+  geom_abline(
+    slope = 1,
+    intercept = 0,
+    linetype = "dashed",
+    color = "red",
+    linewidth = 0.7,
+    show.legend = FALSE
+  ) +
+  theme_minimal() +
+  theme_bw() +
+  theme(
+    panel.spacing = unit(2, "lines"),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 14),
+    strip.text = element_text(face = "bold"),
+    legend.position = "bottom"
+  )
+
 
 ggsave(
-  filename = paste0("your result path","cov.png"),
-  plot = cor_cov,
-  width = 8.2,      
+  filename = file.path(results_dir, "cov_if.png"),
+  plot = rem_cov,
+  width = 9,       
   height = 4,      
   units = "in",    
   dpi = 300        
 )
+
+

@@ -18,7 +18,12 @@ mean.est.fxn <- function(dat){
   return(sum(dat$f*dat$labind/dat$labprob)/sum(dat$labind/dat$labprob))
 }
 mean.phi.yn <- function(dat){
-  return((dat$Y-mean(dat$Y))*dat$labind/dat$labprob)
+  observed <- dat$labind == 1
+  ipw <- dat$labind/dat$labprob
+  mean.y <- sum(dat$Y[observed]*ipw[observed])/sum(ipw[observed])
+  phi <- numeric(nrow(dat))
+  phi[observed] <- (dat$Y[observed] - mean.y)*ipw[observed]
+  return(phi)
 }
 mean.phi.fxn <- function(dat){
   return((dat$f-mean(dat$f))*(dat$labind/dat$labprob-1))
@@ -40,7 +45,14 @@ tpr.est.fxn <- function(dat){
   return(sum((dat$R>alpha)*dat$f*dat$labind/dat$labprob)/sum(dat$f*dat$labind/dat$labprob))
 }
 tpr.phi.yn <- function(dat){
-  return((1*(dat$R>alpha)*dat$Y/mean(dat$Y) - mean((dat$R>alpha)*dat$Y)*dat$Y/(mean(dat$Y))^2)*dat$labind/dat$labprob)
+  observed <- dat$labind == 1
+  ipw <- dat$labind/dat$labprob
+  mean.y <- sum(dat$Y[observed]*ipw[observed])/nrow(dat)
+  mean.ry <- sum((dat$R[observed]>alpha)*dat$Y[observed]*ipw[observed])/nrow(dat)
+  phi <- numeric(nrow(dat))
+  phi[observed] <- ((dat$R[observed]>alpha)*dat$Y[observed]/mean.y -
+                      mean.ry*dat$Y[observed]/(mean.y^2))*ipw[observed]
+  return(phi)
 }
 tpr.phi.fxn <- function(dat){
   return((1*(dat$R>alpha)*dat$f/mean(dat$f) - mean((dat$R>alpha)*dat$f)*dat$f/(mean(dat$f))^2)*(dat$labind/dat$labprob-1))
@@ -61,7 +73,14 @@ fpr.est.fxn <- function(dat){
   return(sum((dat$R>alpha)*(1-dat$f)*dat$labind/dat$labprob)/sum((1-dat$f)*dat$labind/dat$labprob))
 }
 fpr.phi.yn <- function(dat){
-  return((1*(dat$R>alpha)*(1-dat$Y)/mean(1-dat$Y) - mean((dat$R>alpha)*(1-dat$Y))*(1-dat$Y)/(mean(1-dat$Y))^2)*dat$labind/dat$labprob)
+  observed <- dat$labind == 1
+  ipw <- dat$labind/dat$labprob
+  mean.one.minus.y <- sum((1-dat$Y[observed])*ipw[observed])/nrow(dat)
+  mean.r.one.minus.y <- sum((dat$R[observed]>alpha)*(1-dat$Y[observed])*ipw[observed])/nrow(dat)
+  phi <- numeric(nrow(dat))
+  phi[observed] <- ((dat$R[observed]>alpha)*(1-dat$Y[observed])/mean.one.minus.y -
+                      mean.r.one.minus.y*(1-dat$Y[observed])/(mean.one.minus.y^2))*ipw[observed]
+  return(phi)
 }
 fpr.phi.fxn <- function(dat){
   return((1*(dat$R>alpha)*(1-dat$f)/mean(1-dat$f) - mean((dat$R>alpha)*(1-dat$f))*(1-dat$f)/(mean(1-dat$f))^2)*(dat$labind/dat$labprob-1))
@@ -100,7 +119,6 @@ auc.est.yn <- function(dat){
   dat$w <- dat$labind / dat$labprob # IPW weights
   ## TPR
   TPR <- cumsum(dat$Y[score.order] * dat$w[score.order])/sum(dat$Y[score.order] * dat$w[score.order])
-  
   TPR <- c(0,TPR[!dups])
   
   ## FPR
@@ -161,70 +179,75 @@ auc.est.fxn <- function(dat){
 ## The influence functions computation for AUC mostly follows from the cvAUC package 
 ## with some small adjustments to accommodate our setups
 auc.phi.yn <- function(dat){
-  library(cvAUC)
-  predictions <- dat$score  # Length-V list of predicted values
-  labels <- dat$Y  # Length-V list of true labels
-  n_obs <- nrow(dat)  # Number of observations
+  observed <- dat$labind == 1
+  predictions <- dat$score[observed]
+  labels <- dat$Y[observed]
+  case.weights <- (dat$labind/dat$labprob)[observed]
   
-  # Inverse probability weights across entire data set
-  w1 <- 1/(sum(labels==1)/n_obs)  # Inverse weights for positive class 1/E[Y]
-  w0 <- 1/(sum(labels==0)/n_obs)  # Inverse weights for negative class 1/E[1-Y]
+  # Inverse weighted probabilities for the positive and negative classes
+  w1 <- 1 / mean(dat$labind * dat$Y / dat$labprob)
+  w0 <- 1 / mean(dat$labind * (1-dat$Y) / dat$labprob)
+  auc_y <- auc.est.yn(dat)
   
-  # This is required to cleanly get past R CMD CHECK
-  # https://stackoverflow.com/questions/8096313/no-visible-binding-for-global-variable-note-in-r-cmd-check
-  pred <- label <- NULL
-  fracNegLabelsWithSmallerPreds <- fracPosLabelsWithLargerPreds <- icVal <- NULL  
+  pred <- label <- obs.weight <- row.id <- NULL
+  fracNegLabelsWithSmallerPreds <- fracPosLabelsWithLargerPreds <- icVal <- NULL
   
-  .IC <- function(fold_preds, fold_labels, pos, neg, w1, w0) { 
-    # Applied to a single fold's (preds, labels)
-    n_rows <- length(fold_labels)
-    n_pos <- sum(fold_labels == pos)
-    n_neg <- n_rows - n_pos
-    auc <- AUC(fold_preds, fold_labels)
-    DT <- data.table(pred = fold_preds, label = fold_labels)
-    DT <- DT[order(pred, -xtfrm(label))]  #Sort by asc(pred), desc(label)
-    DT[, fracNegLabelsWithSmallerPreds := cumsum(label == neg)/n_neg] #fracNegLabelSWithSmallerPreds: E[I(R>\alpha)(1-Y)]/E[1-Y] at all R_i
-    DT <- DT[order(-pred, label)] 
-    DT[, fracPosLabelsWithLargerPreds := cumsum(label == pos)/n_pos] #fracPosLabelsWithLargerPreds: (1-E[I(R<=\alpha)Y]/E[Y]) at all R_i
-    DT[, icVal := ifelse(label == pos, w1 * (fracNegLabelsWithSmallerPreds - auc),
-                         w0 * (fracPosLabelsWithLargerPreds - auc))]
-    #DT[, icVal :=  label*w1 * (fracNegLabelsWithSmallerPreds - auc)+(1-label)*w0 * (fracPosLabelsWithLargerPreds - auc)]
-    #return(mean(DT$icVal))
+  .IC <- function(fold_preds, fold_labels, fold_weights, pos, neg, w1, w0, auc) {
+    n_pos <- sum(fold_weights*(fold_labels == pos))
+    n_neg <- sum(fold_weights*(fold_labels == neg))
+    DT <- data.table(row.id = seq_along(fold_labels), pred = fold_preds,
+                     label = fold_labels, obs.weight = fold_weights)
+    DT <- DT[order(pred, -xtfrm(label))]
+    DT[, fracNegLabelsWithSmallerPreds :=
+         cumsum(obs.weight*(label == neg))/n_neg]
+    DT <- DT[order(-pred, label)]
+    DT[, fracPosLabelsWithLargerPreds :=
+         cumsum(obs.weight*(label == pos))/n_pos]
+    DT[, icVal := ifelse(label == pos,
+                         w1*(fracNegLabelsWithSmallerPreds - auc),
+                         w0*(fracPosLabelsWithLargerPreds - auc))]
+    DT <- DT[order(row.id)]
     return(DT$icVal)
   }
-  return(.IC(fold_preds=predictions, fold_labels=labels, pos=1, neg=0, w1=w1, w0=w0)*(dat$labind / dat$labprob)) # weighted
+  
+  phi <- numeric(nrow(dat))
+  phi[observed] <- .IC(fold_preds = predictions, fold_labels = labels,
+                       fold_weights = case.weights, pos = 1, neg = 0,
+                       w1 = w1, w0 = w0, auc = auc_y)*case.weights
+  return(phi)
 }
 
 auc.phi.fxn <- function(dat){
-  predictions <- dat$score  # Length-V list of predicted values
-  labels <- dat$f  # Length-V list of f
-  n_obs <- nrow(dat)  # Number of observations
+  predictions <- dat$score
+  labels <- dat$f
+  n_obs <- nrow(dat)
   
-  # Inverse probability weights across entire data set
-  w1 <- 1/(mean(labels))  # Inverse weights for f
-  w0 <- 1/(mean(1-labels))  # Inverse weights for 1-f
+  # Inverse probabilities for the soft positive and negative classes
+  w1 <- 1/(mean(labels))
+  w0 <- 1/(mean(1-labels))
+  auc_f <- auc.est.fxall(dat)
   
-  # This is required to cleanly get past R CMD CHECK
-  # https://stackoverflow.com/questions/8096313/no-visible-binding-for-global-variable-note-in-r-cmd-check
-  pred <- label <- NULL
-  fracNegLabelsWithSmallerPreds <- fracPosLabelsWithLargerPreds <- icVal <- NULL  
+  pred <- label <- row.id <- NULL
+  fracNegLabelsWithSmallerPreds <- fracPosLabelsWithLargerPreds <- icVal <- NULL
   
-  .IC <- function(fold_preds, fold_labels, w1, w0) { 
-    # Applied to a single fold's (preds, labels)
-    
+  .IC <- function(fold_preds, fold_labels, w1, w0, auc) {
     n_pos <- sum(fold_labels)
     n_neg <- sum(1-fold_labels)
-    auc_f <- auc.est.fxn(dat)
-    DT <- data.table(pred = fold_preds, label = fold_labels)
-    DT <- DT[order(pred, -xtfrm(label))]  #Sort by asc(pred), desc(label)
+    DT <- data.table(row.id = seq_along(fold_labels), pred = fold_preds,
+                     label = fold_labels)
+    DT <- DT[order(pred, -xtfrm(label))]
     DT[, fracNegLabelsWithSmallerPreds := cumsum(1-label)/n_neg]
-    DT <- DT[order(-pred, label)] 
+    DT <- DT[order(-pred, label)]
     DT[, fracPosLabelsWithLargerPreds := cumsum(label)/n_pos]
-    DT[, icVal :=  label*w1 * (fracNegLabelsWithSmallerPreds - auc_f)+(1-label)*w0 * (fracPosLabelsWithLargerPreds - auc_f)]
-    #return(mean(DT$icVal))
+    DT[, icVal := label*w1*(fracNegLabelsWithSmallerPreds - auc) +
+         (1-label)*w0*(fracPosLabelsWithLargerPreds - auc)]
+    DT <- DT[order(row.id)]
     return(DT$icVal)
   }
-  return(.IC(fold_preds=predictions, fold_labels=labels, w1=w1, w0=w0)*(dat$labind / dat$labprob-1)) # weighted
+  
+  return(.IC(fold_preds = predictions, fold_labels = labels,
+             w1 = w1, w0 = w0, auc = auc_f)*
+           (dat$labind/dat$labprob-1))
 }
 
 
@@ -241,8 +264,7 @@ f_types <- c("all","noise","bad","ideal","pure_noise")# different prediction mod
 
 alpha <- 0.6
 
-results_dir <- paste0("your result path") 
-
+results_dir <- "results/covshift_ipw"
 set.seed(2025)
 
 # The covariance matrix of (R,X_1,...,X_5)
@@ -412,8 +434,19 @@ ppi.sim <- function(nrep,dat_gen,size_all){
     # for saving the coverage of the PPI estimators
     mean_cov_ppi_vec <- tpr_cov_ppi_vec <- fpr_cov_ppi_vec <- auc_cov_ppi_vec <-  vector("numeric",length=nrep)
     
-    current_path <- paste(results_dir,'f_',f_types[k],'_size_',size_all,'/',sep='')
-    dir.create(file.path(current_path),showWarnings = FALSE)
+    dir.create(results_dir, recursive = TRUE, showWarnings = FALSE)
+    
+    current_path <- file.path(
+      results_dir,
+      sprintf("f_%s_size_%d", f_types[k], size_all)
+    )
+    
+    dir.create(
+      current_path,
+      recursive = TRUE,
+      showWarnings = FALSE
+    )
+
     
     # simulations -------------------------------------------------------------
     
@@ -551,7 +584,7 @@ ppi.sim <- function(nrep,dat_gen,size_all){
                     auc_sd_n_i=auc_sd_n_vec[i],
                     auc_sd_ppi_i=auc_sd_ppi_vec[i]
       )
-      save(res.i, file = paste(current_path,"res.",i,'.Rdata',sep=''))
+      save(res.i, file = file.path(current_path, paste0("res.", i, ".Rdata")))
     }
    
     # save the summary results for one simulation scenario
@@ -603,7 +636,7 @@ ppi.sim <- function(nrep,dat_gen,size_all){
                 auc_cov_ppi= mean(auc_cov_ppi_vec)
                 
     )
-    save(res,file=paste(current_path,'res.summary.Rdata',sep=''))
+    save(res, file = file.path(current_path, "res.summary.Rdata"))
   }
   
   
@@ -625,7 +658,10 @@ metrics     <- c("mean", "tpr", "fpr", "auc")
 ratio_list <- list()
 
 for (model in models) {
-  folder_path <- paste0("your result path",sprintf("f_%s_size_50000", model))
+  folder_path <- file.path(
+    results_dir,
+    sprintf("f_%s_size_50000", model)
+  )
   
   # find all simulation files
   sim_files <- list.files(
@@ -732,7 +768,7 @@ ratio_sec3 <- ggplot(df_ratio,
     )
   )
 ggsave(
-  filename = paste0("your result path","ratio_cov_shift.png"),
+  filename = file.path(results_dir, "ratio_cov_shift.png"),
   plot = ratio_sec3,
   width = 8,       
   height = 5,      
@@ -750,7 +786,7 @@ methods    <- c("n", "ppi")
 cov_results <- map_dfr(models, function(model) {
   # build the folder path
   folder_name <- sprintf("f_%s_size_50000", model)
-  folder_path <- paste0("your result path",sprintf("f_%s_size_50000", model))
+  folder_path <- file.path(results_dir, sprintf("f_%s_size_50000", model))
   
   if (!dir.exists(folder_path)) {
     stop("Folder not found: ", folder_path)
@@ -758,7 +794,7 @@ cov_results <- map_dfr(models, function(model) {
   
   # load the targets
   sum_env <- new.env()
-  load(file.path(folder_path, "res.summary.RData"), envir = sum_env)
+  load(file.path(folder_path, "res.summary.Rdata"), envir = sum_env)
   targets <- sum_env$res
   
   # find all sim files 
@@ -881,7 +917,7 @@ cov_sec3 <- ggplot(df_final,
         legend.position = "bottom")
 
 ggsave(
-  filename = paste0("your result path","cov_sec3.png"),
+  filename =  file.path(results_dir, "cov_sec3.png"),
   plot = cov_sec3,
   width = 8,      
   height = 4,     
@@ -893,7 +929,7 @@ ggsave(
 models  <- c("all", "ideal", "noise", "bad", "pure_noise")
 metrics <- c("mean", "tpr", "fpr", "auc")
 
-base_dir <- "your result path"
+base_dir <- results_dir
 
 diff_list <- list()
 
@@ -908,7 +944,7 @@ for (model in models) {
   
   # load res.summary.RData
   sum_env <- new.env()
-  load(file.path(folder_path, "res.summary.RData"), envir = sum_env)
+  load(file.path(folder_path, "res.summary.Rdata"), envir = sum_env)
   res <- sum_env$res
   
   # compute mean(est_ppi - target_0)
@@ -1010,12 +1046,10 @@ diff_sec3 <- ggplot(df_diff,
   )
 
 ggsave(
-  filename = paste0("your result path","bias_sec3.png"),
+  filename = file.path(results_dir, "bias_sec3.png"),
   plot     = diff_sec3,
   width    = 8,
   height   = 5,
   units    = "in",
   dpi      = 300
 )
-
-
