@@ -6,5 +6,5 @@ Figures 1-6, S.1-S.9 can be generated using the scripts.
 # References
 The function for computing the influence function of AUC is based on the code of the cvAUC R packge here: https://github.com/ledell/cvAUC.
 
-The real data analysis is using wine quality data from here: https://archive.ics.uci.edu/dataset/186/wine+quality.
+The real data analysis is using data from here: https://github.com/aangelopoulos/ppi_py/tree/main/examples.
 
