@@ -3,9 +3,7 @@
 # Y    = human label indicating whether a galaxy has spiral arms
 # f    = computer-vision prediction score
 # R    = f, used as the continuous score for TPR, FPR, and AUC
-#
-# TPR and FPR use R > 0.6. AUC gives half credit to tied scores.
-# The full cohort is fixed; only the labeled subset changes across repetitions.
+
 
 library(tidyverse)
 library(grid)
@@ -167,7 +165,7 @@ col_var <- function(x) {
   replace(v, !is.finite(v) | v <= 0, NA_real_)
 }
 
-# Section 6.1 PPI estimator 
+
 
 ppi_fit <- function(d, C, full_prediction, cutoff) {
   n <- sum(C)
@@ -184,7 +182,7 @@ ppi_fit <- function(d, C, full_prediction, cutoff) {
   correction <- full_prediction$theta - f$theta
   ppi <- y$theta + omega * correction
   
-  # Analytic variance from Section 6.1, with lambda = n/N.
+  
   ppi_var <- (vy - cyf^2 / ((1 + n / N) * vf)) / n
   ppi_var[ppi_var <= 0] <- NA_real_
   

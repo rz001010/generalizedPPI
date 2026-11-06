@@ -1,17 +1,16 @@
 # Healthcare PPI: repeat the labeling step 1000 times on the same full dataset.
 # Y = insurance status; f = supplied prediction; R = income.
-# TPR/FPR use R > alpha. AUC gives half credit to ties.
 
 root <- "results/real_data"
 
 cfg <- list(
   B = 1000,
   seed = 20250903,
-  lambda = 0.004,        # Section 6.1 ratio n/N
-  shift_n = 1200,        # approximate number labeled under covariate shift
+  lambda = 0.004,        
+  shift_n = 1200,        
   gamma = 0.25,          # income effect in the labeling model
   alpha = 50000,
-  eps = 1e-5,            # diagnostic lower bound; propensities are not clipped
+  eps = 1e-5,            
   level = 0.95,
   data = file.path(root, "data"),
   out = file.path(root, "healthcare_ppi_lambda_0.004")
