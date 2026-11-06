@@ -220,7 +220,7 @@ library(randomForest)
 rf_all <- randomForest(Y ~ R + X1 + X2 + X3 + X4 + X5,
                        data = train_dat)
 
-# data generation -------------------------------------------------------------------
+# data generation 
 dat_gen <- function(n,N,f_type){
   
   # generate the data to construct the labeled data estimators and PPI estimators
@@ -519,7 +519,7 @@ for (lambda_val in lambda_vals) {
   }
 }
 
-# bind into a data.frame 
+
 df_ratio <- bind_rows(ratio_list)
 df_ratio$metric <- recode(df_ratio$metric,
                           tpr  = "TPR",
@@ -528,7 +528,7 @@ df_ratio$metric <- recode(df_ratio$metric,
 df_ratio$metric <- factor(df_ratio$metric, levels = c("TPR", "FPR", "AUC"))
 df_ratio$lambda <- factor(df_ratio$lambda, levels = lambda_vals)
 
-# Left panel: Figure S.1(a)
+
 df_all_ratio <- df_ratio %>% filter(model=="all")
 
 rem_ratio_all <- ggplot(df_all_ratio,
@@ -566,7 +566,7 @@ ggsave(
 
 df_ideal_ratio <- df_ratio %>% filter(model=="ideal")
 
-# Right panel: Figure S.1(b)
+
 rem_ratio_ideal <- ggplot(df_ideal_ratio,
                           aes(x     = metric,
                               y     = mean_ratio,
@@ -608,7 +608,7 @@ metrics    <- c("tpr", "fpr", "auc")
 methods    <- c("n", "ppi")
 
 cov_results <- map_dfr(models, function(model) {
-  # build the folder path
+  
   folder_name <- sprintf("f_%s_n_1000_lambda_%s", model, lambda_val)
   folder_path <- file.path(results_dir, folder_name)
   
@@ -634,11 +634,11 @@ cov_results <- map_dfr(models, function(model) {
   }
   cat("  Loading simulation files\n")
   
-  # load each one into its own env
+  
   sims <- map(sim_files, function(f) {
     e <- new.env()
     load(f, envir = e)
-    # assume the first object loaded is your list
+    
     e[[ls(e)[1]]]
   })
   cat("  Loaded all simulations\n")
@@ -667,27 +667,16 @@ cov_results <- map_dfr(models, function(model) {
     dplyr::select(model, alpha, method, metric, coverage)
 })
 
-#df <- cov_results
-#df_n_collapsed <- df %>%
-#  filter(method == "n") %>%
-#  group_by(alpha,metric) %>%
-#  summarise(
-#    coverage = first(coverage),
-#    method = "n",
-#    model = "zonlylabest",
-#    .groups = "drop"
-#  )
-#df_others <- df %>%
-#  filter(!(method == "n"))
+
 df_final <- cov_results
 
-# Explicit panel labels and order.
+
 df_final$metric <- factor(
   toupper(as.character(df_final$metric)),
   levels = c("TPR", "FPR", "AUC")
 )
 
-# Retain both labeled-only results.
+
 plot_levels <- c("all", "ideal", "zonlylabest")
 
 df_final$plot_model <- factor(
@@ -699,7 +688,7 @@ df_final$plot_model <- factor(
   levels = plot_levels
 )
 
-# Identical mappings for plotted points and legend symbols.
+
 plot_colors <- c(
   all = "salmon",
   ideal = "chartreuse4",

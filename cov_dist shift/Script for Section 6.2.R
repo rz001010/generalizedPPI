@@ -348,7 +348,7 @@ rf_bad <- randomForest(Y ~ R + X1 + X4 + X5,
 # data generation function
 dat_gen_full <- function(size,f_type){
   
-  # generate the data in the context of Section 3.1
+  # generate the data in the context of Section 3.2
   inf_dat <- as.data.frame(mvrnorm((size), mu=c(0,0,0,0,3,20), Sigma=Var_mat))
   names(inf_dat) <- c("R","X1","X2","X3","X4","X5")
   
@@ -448,7 +448,7 @@ ppi.sim <- function(nrep,dat_gen,size_all){
     )
 
     
-    # simulations -------------------------------------------------------------
+    # simulations 
     
     for( i in 1:nrep){
       
@@ -784,7 +784,7 @@ metrics    <- c("mean", "tpr", "fpr", "auc")
 methods    <- c("n", "ppi")
 
 cov_results <- map_dfr(models, function(model) {
-  # build the folder path
+  
   folder_name <- sprintf("f_%s_size_50000", model)
   folder_path <- file.path(results_dir, sprintf("f_%s_size_50000", model))
   
@@ -813,13 +813,13 @@ cov_results <- map_dfr(models, function(model) {
   sims <- map(sim_files, function(f) {
     e <- new.env()
     load(f, envir = e)
-    # assume the first object loaded is your list
+    
     e[[ls(e)[1]]]
   })
   cat("  Loaded all simulations\n")
   
   cat("  Computing coverage...\n")
-  # 2c) compute coverage
+  # compute coverage
   expand.grid(alpha  = alpha_lvls,
               metric = metrics,
               method = methods,

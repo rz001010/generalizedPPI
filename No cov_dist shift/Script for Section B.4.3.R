@@ -338,11 +338,7 @@ efficient.rectifier.sim <- function(nrep,dat_gen,n,lambda,
       fpr_sd_n.i <- sqrt(var(fpr_phi_n.i)/n)
       auc_sd_n.i <- sqrt(var(auc_phi_n.i)/n)
 
-      # Direct plug-in efficient variance:
-      # [E_hat{phi^2} - N/(n+N) * Var_hat{m_hat(X)}] / n
-      #
-      # Estimate E{phi^2} using the labeled observations.
-      # Estimate Var{m_hat(X)} using all n+N cross-fitted predictions.
+      
       
       tpr_var_eff.i <- (
         mean(tpr_phi_n.i^2) -
@@ -469,15 +465,14 @@ efficient.rectifier.sim <- function(nrep,dat_gen,n,lambda,
 
 
 # Simulations for lambda in {0.8,0.5,0.25,0.1,0.01}
-# 169
+
 efficient.rectifier.sim(nrep=2500,dat_gen,n=nvec[1],lambda=lambdavec[1],nfolds=nfolds,spline_df=spline_df)
-# 171
+
 efficient.rectifier.sim(nrep=2500,dat_gen,n=nvec[1],lambda=lambdavec[2],nfolds=nfolds,spline_df=spline_df)
-# 172
+
 efficient.rectifier.sim(nrep=2500,dat_gen,n=nvec[1],lambda=lambdavec[3],nfolds=nfolds,spline_df=spline_df)
-# 183
+
 efficient.rectifier.sim(nrep=2500,dat_gen,n=nvec[1],lambda=lambdavec[4],nfolds=nfolds,spline_df=spline_df)
 
-#efficient.rectifier.sim(nrep=2500,dat_gen,n=nvec[1],lambda=lambdavec[5],nfolds=nfolds,spline_df=spline_df)
 
 

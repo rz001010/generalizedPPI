@@ -708,11 +708,11 @@ cov_results <- map_dfr(models, function(model) {
   }
   cat("  Loading simulation files\n")
   
-  # load each one into its own env
+  
   sims <- map(sim_files, function(f) {
     e <- new.env()
     load(f, envir = e)
-    # assume the first object loaded is your list
+    
     e[[ls(e)[1]]]
   })
   cat("  Loaded all simulations\n")
